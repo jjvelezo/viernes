@@ -151,24 +151,45 @@ def aplicar_snap_si_corresponde(hwnd, x, y):
         raise ValueError(f"El handle {hwnd} ya no corresponde a una ventana válida.")
 
     izq, arriba, derecha, abajo = obtener_area_trabajo_monitor(x, y)
-    ancho, alto = derecha - izq, abajo - arriba
 
     try:
         if y <= arriba + UMBRAL_SNAP:
             win32gui.ShowWindow(hwnd, win32con.SW_MAXIMIZE)
             return True
         if x <= izq + UMBRAL_SNAP:
-            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-            win32gui.SetWindowPos(hwnd, 0, izq, arriba, ancho // 2, alto, win32con.SWP_NOZORDER)
+            lanzar_ventana_lateral(hwnd, "izquierda", x, y)
             return True
         if x >= derecha - UMBRAL_SNAP:
-            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-            win32gui.SetWindowPos(hwnd, 0, izq + ancho // 2, arriba, ancho // 2, alto, win32con.SWP_NOZORDER)
+            lanzar_ventana_lateral(hwnd, "derecha", x, y)
             return True
     except pywintypes.error as error:
         raise ValueError(f"No se pudo aplicar el snap a la ventana {hwnd}: {error}") from error
 
     return False
+
+
+def lanzar_ventana_lateral(hwnd, lado, x, y):
+    """Ajusta `hwnd` a la mitad izquierda o derecha del monitor que contiene
+    (x, y), sin condición de cercanía a ningún borde (a diferencia de
+    aplicar_snap_si_corresponde). Pensado para el gesto de "lanzar" la
+    ventana: soltar el pellizco con velocidad horizontal alta, sin importar
+    en qué punto de la pantalla se soltó."""
+    if not win32gui.IsWindow(hwnd):
+        raise ValueError(f"El handle {hwnd} ya no corresponde a una ventana válida.")
+    if lado not in ("izquierda", "derecha"):
+        raise ValueError(f"lado debe ser 'izquierda' o 'derecha', no {lado!r}")
+
+    izq, arriba, derecha, abajo = obtener_area_trabajo_monitor(x, y)
+    ancho, alto = derecha - izq, abajo - arriba
+
+    try:
+        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+        if lado == "izquierda":
+            win32gui.SetWindowPos(hwnd, 0, izq, arriba, ancho // 2, alto, win32con.SWP_NOZORDER)
+        else:
+            win32gui.SetWindowPos(hwnd, 0, izq + ancho // 2, arriba, ancho // 2, alto, win32con.SWP_NOZORDER)
+    except pywintypes.error as error:
+        raise ValueError(f"No se pudo lanzar la ventana {hwnd}: {error}") from error
 
 
 def obtener_ventana_en_punto(x, y):

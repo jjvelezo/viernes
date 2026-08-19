@@ -4,6 +4,7 @@ pellizco con AMBAS manos = redimensionar (derecha = esquina superior
 derecha, izquierda = esquina inferior izquierda); puño sostenido mientras
 se arrastra = cerrar la ventana."""
 
+import math
 import sys
 import time
 from collections import deque
@@ -24,6 +25,7 @@ from fase4_cursor import (
     clic_izquierdo,
     esta_maximizada,
     hacer_scroll,
+    lanzar_ventana_lateral,
     mover_cursor,
     mover_ventana,
     obtener_limites_virtuales,
@@ -54,9 +56,28 @@ MARGEN_Y = 0.30
 # siempre supera este umbral de inmediato).
 DEADZONE_CURSOR = 5
 
+# Filtro para la posición del cursor sobre la pantalla (px). True = filtro 1€
+# (Casiez et al. 2012): corte adaptativo a la velocidad de la mano, así que
+# filtra fuerte con la mano quieta (sin temblor) y casi no filtra en
+# movimientos rápidos (sin el "arrastre"/lag que deja un suavizado de factor
+# fijo). False = vuelve al suavizado exponencial de FACTOR_SUAVIZADO de
+# siempre (código legado, queda comentado más abajo en el bucle principal).
+USAR_FILTRO_ONE_EURO = True
+ONE_EURO_MINCUTOFF = 1.0  # Hz. Más bajo = más agresivo contra el temblor en reposo, a costa de más lag al arrancar a mover
+ONE_EURO_BETA = 0.007     # más alto = reacciona más rápido a movimientos veloces (menos arrastre), pero puede reintroducir algo de temblor
+ONE_EURO_DCUTOFF = 1.0    # Hz, suaviza la propia estimación interna de velocidad que usa el filtro
+
 ALTURA_AGARRE = 20  # distancia (px) del cursor al borde superior de la ventana al agarrarla, simula agarrar la barra de título
 
 TIEMPO_CIERRE = 1.5    # segundos de puño sostenido (mientras se arrastra) para cerrar la ventana agarrada
+
+# Gesto de "lanzar" ventana: si al soltar el pellizco la mano venía con
+# velocidad horizontal alta, la ventana se manda a la mitad izquierda o
+# derecha de la pantalla (como un snap forzado), en vez del snap normal por
+# cercanía al borde. HISTORIAL_VELOCIDAD_LEN frames recientes de posición
+# (mientras se arrastra) se usan para estimar esa velocidad al soltar.
+UMBRAL_VELOCIDAD_LANZAR = 1500  # px/s de velocidad horizontal para que cuente como "lanzazo" (ajustar probando)
+HISTORIAL_VELOCIDAD_LEN = 5
 
 MIN_FRAMES_CLICK = 2  # frames mínimos de pellizco crudo para que cuente como click (filtra ruido de 1 frame)
 
@@ -71,6 +92,51 @@ UMBRAL_PARAR_SCROLL = 0.3  # px/frame por debajo del cual se considera detenido 
 
 # MediaPipe detecta la mano invertida respecto al frame espejado, por eso se corrige acá
 VOLTEAR_HANDEDNESS = True
+
+
+class FiltroOneEuro:
+    """Filtro 1€ (Casiez, Roussel y Vogel, 2012): paso-bajo con frecuencia de
+    corte adaptativa a la velocidad de la señal. Con la mano quieta filtra
+    fuerte (mincutoff bajo -> elimina temblor); al acelerar, el corte sube
+    con `beta * |velocidad|` y deja pasar casi toda la señal (evita el lag
+    que deja un suavizado de factor fijo en movimientos rápidos)."""
+
+    def __init__(self, mincutoff, beta, dcutoff):
+        self.mincutoff = mincutoff
+        self.beta = beta
+        self.dcutoff = dcutoff
+        self.x_prev = None
+        self.dx_prev = 0.0
+        self.t_prev = None
+
+    @staticmethod
+    def _alpha(cutoff, dt):
+        tau = 1.0 / (2 * math.pi * cutoff)
+        return 1.0 / (1.0 + tau / dt)
+
+    def reset(self):
+        self.x_prev = None
+        self.dx_prev = 0.0
+        self.t_prev = None
+
+    def filtrar(self, x, t):
+        """x: valor crudo de la señal. t: timestamp en segundos."""
+        if self.t_prev is None:
+            self.x_prev, self.t_prev = x, t
+            return x
+
+        dt = max(t - self.t_prev, 1e-6)  # evita división por cero si dos frames comparten timestamp
+
+        dx = (x - self.x_prev) / dt
+        a_d = self._alpha(self.dcutoff, dt)
+        dx_hat = a_d * dx + (1 - a_d) * self.dx_prev
+
+        cutoff = self.mincutoff + self.beta * abs(dx_hat)
+        a = self._alpha(cutoff, dt)
+        x_hat = a * x + (1 - a) * self.x_prev
+
+        self.x_prev, self.dx_prev, self.t_prev = x_hat, dx_hat, t
+        return x_hat
 
 
 def mapear_con_margen(valor, margen):
@@ -118,6 +184,8 @@ def main():
     posiciones = {mano: None for mano in MANOS}
     historiales_x = {mano: deque(maxlen=HISTORIAL_LEN) for mano in MANOS}
     historiales_y = {mano: deque(maxlen=HISTORIAL_LEN) for mano in MANOS}
+    filtros_x = {mano: FiltroOneEuro(ONE_EURO_MINCUTOFF, ONE_EURO_BETA, ONE_EURO_DCUTOFF) for mano in MANOS}
+    filtros_y = {mano: FiltroOneEuro(ONE_EURO_MINCUTOFF, ONE_EURO_BETA, ONE_EURO_DCUTOFF) for mano in MANOS}
     estados_gesto = {mano: EstadoDebounce() for mano in MANOS}
 
     # Arrastre con una mano
@@ -126,6 +194,7 @@ def main():
     mano_arrastre = None
     offset_x, offset_y = 0, 0
     tiempo_inicio_cierre = None  # timestamp de cuándo empezó el puño sostenido, o None
+    historial_arrastre = deque(maxlen=HISTORIAL_VELOCIDAD_LEN)  # (t, x, y) recientes para el gesto de "lanzar" al soltar
 
     # Redimensionar con las dos manos a la vez
     estado_resize = "sin_agarre"  # "sin_agarre" | "agarrado"
@@ -153,6 +222,7 @@ def main():
                 rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
                 timestamp_ms = int(time.time() * 1000)
+                t_actual = timestamp_ms / 1000.0  # en segundos, para el filtro 1€ y la velocidad de arrastre
                 result = landmarker.detect_for_video(mp_image, timestamp_ms)
 
                 h, w, _ = frame.shape
@@ -194,7 +264,22 @@ def main():
                     anterior = posiciones[mano]
                     if anterior is None:
                         posiciones[mano] = (objetivo_x, objetivo_y)
+                        filtros_x[mano].filtrar(objetivo_x, t_actual)
+                        filtros_y[mano].filtrar(objetivo_y, t_actual)
+                    elif USAR_FILTRO_ONE_EURO:
+                        x_suave = filtros_x[mano].filtrar(objetivo_x, t_actual)
+                        y_suave = filtros_y[mano].filtrar(objetivo_y, t_actual)
+                        ax, ay = anterior
+                        distancia = ((x_suave - ax) ** 2 + (y_suave - ay) ** 2) ** 0.5
+                        if distancia > DEADZONE_CURSOR:
+                            posiciones[mano] = (x_suave, y_suave)
+                        # si no, el objetivo está dentro de la deadzone: se
+                        # mantiene la posición actual tal cual (no es "no
+                        # actualizar el suavizado", es directamente ignorar
+                        # este frame para el cursor). El filtro en sí sigue
+                        # actualizando su estado interno igual arriba.
                     else:
+                        # --- suavizado exponencial (versión anterior a 1€) ---
                         ax, ay = anterior
                         distancia = ((objetivo_x - ax) ** 2 + (objetivo_y - ay) ** 2) ** 0.5
                         if distancia > DEADZONE_CURSOR:
@@ -215,6 +300,8 @@ def main():
                         posiciones[mano] = None
                         historiales_x[mano].clear()
                         historiales_y[mano].clear()
+                        filtros_x[mano].reset()
+                        filtros_y[mano].reset()
 
                 gesto_confirmado = {mano: estados_gesto[mano].actualizar(gestos_actuales[mano]) for mano in MANOS}
                 pellizco_der = gesto_confirmado["Right"] == "PELLIZCO"
@@ -287,11 +374,13 @@ def main():
                                 mano_arrastre = mano_activa
                                 estado_arrastre = "agarrado"
                                 llego_a_agarrar[mano_activa] = True
+                                historial_arrastre.clear()
                             except (pywintypes.error, ValueError):
                                 pass  # la ventana desapareció justo al intentar agarrarla
                     elif estado_arrastre == "agarrado" and mano_arrastre == mano_activa and pos is not None:
                         try:
                             mover_ventana(hwnd_agarrado, pos[0] - offset_x, pos[1] - offset_y)
+                            historial_arrastre.append((t_actual, pos[0], pos[1]))
                         except ValueError:
                             estado_arrastre = "sin_agarre"
                             hwnd_agarrado, titulo_agarrado = None, None
@@ -299,6 +388,7 @@ def main():
                         # cambió la mano que pellizca sin soltar antes: soltamos sin snap
                         estado_arrastre = "sin_agarre"
                         hwnd_agarrado, titulo_agarrado = None, None
+                        historial_arrastre.clear()
                     # si pos es None este frame (tracking momentáneo perdido), no hacemos
                     # nada: se mantiene el estado tal cual hasta el próximo frame válido
                 else:
@@ -306,12 +396,29 @@ def main():
                     if estado_arrastre == "agarrado":
                         pos_suelta = posiciones.get(mano_arrastre)
                         if hwnd_agarrado is not None and pos_suelta is not None:
+                            # Velocidad horizontal de soltada, estimada entre el
+                            # primer y el último punto guardados durante el
+                            # arrastre: si viene rápido, se "lanza" la ventana al
+                            # lado en vez de aplicar el snap normal por cercanía.
+                            velocidad_x = 0.0
+                            if len(historial_arrastre) >= 2:
+                                t0, x0, _ = historial_arrastre[0]
+                                t1, x1, _ = historial_arrastre[-1]
+                                dt = t1 - t0
+                                if dt > 0:
+                                    velocidad_x = (x1 - x0) / dt
+
                             try:
-                                aplicar_snap_si_corresponde(hwnd_agarrado, pos_suelta[0], pos_suelta[1])
+                                if abs(velocidad_x) > UMBRAL_VELOCIDAD_LANZAR:
+                                    lado = "izquierda" if velocidad_x < 0 else "derecha"
+                                    lanzar_ventana_lateral(hwnd_agarrado, lado, pos_suelta[0], pos_suelta[1])
+                                else:
+                                    aplicar_snap_si_corresponde(hwnd_agarrado, pos_suelta[0], pos_suelta[1])
                             except ValueError:
                                 pass
                         estado_arrastre = "sin_agarre"
                         hwnd_agarrado, titulo_agarrado = None, None
+                        historial_arrastre.clear()
 
                 # --- redimensionar con las dos manos ---
                 if pellizco_der and pellizco_izq and posiciones["Right"] is not None and posiciones["Left"] is not None:
