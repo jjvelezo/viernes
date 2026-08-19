@@ -1,7 +1,8 @@
 """Fase 5 - Mouse virtual: cualquiera de las dos manos mueve el cursor real
-del sistema y arrastra ventanas con un pellizco. Pellizcar con AMBAS manos
-a la vez redimensiona la ventana: la derecha hace de esquina superior
-derecha, la izquierda de esquina inferior izquierda."""
+del sistema. Pellizco corto = click; pellizco sostenido = arrastrar ventana;
+pellizco con AMBAS manos = redimensionar (derecha = esquina superior
+derecha, izquierda = esquina inferior izquierda); puño sostenido mientras
+se arrastra = cerrar la ventana."""
 
 import sys
 import time
@@ -22,6 +23,7 @@ from fase4_cursor import (
     cerrar_ventana,
     clic_izquierdo,
     esta_maximizada,
+    hacer_scroll,
     mover_cursor,
     mover_ventana,
     obtener_limites_virtuales,
@@ -33,20 +35,39 @@ from fase4_cursor import (
 INDICE_PUNTA = 8  # landmark de la punta del dedo índice
 MANOS = ("Left", "Right")
 
-HISTORIAL_LEN = 4       # cantidad de posiciones a promediar para filtrar temblor
-FACTOR_SUAVIZADO = 0.75  # suavizado exponencial sobre la posición filtrada (1.0 = sin suavizado)
+HISTORIAL_LEN = 3       # cantidad de posiciones a promediar para filtrar temblor
+FACTOR_SUAVIZADO = 0.8  # suavizado exponencial sobre la posición filtrada (1.0 = sin suavizado)
 # Margen de cada borde de la cámara que no mapea a pantalla: cuanto más alto,
 # menos hay que mover la mano para llegar a los bordes/esquinas de la pantalla
 # (la zona activa dentro del cuadro se achica). El de Y va más alto porque
 # levantar la mano cerca del borde superior del encuadre es lo más incómodo
 # y además donde MediaPipe pierde antes la detección (mano saliendo de cuadro).
+# OJO: agrandar el margen también amplifica el temblor natural de la mano
+# (una divide por (1 - 2*margen) en mapear_con_margen), por eso hace falta
+# DEADZONE_CURSOR de abajo para compensarlo en precisión de click.
 MARGEN_X = 0.20
 MARGEN_Y = 0.30
 
+# Si el objetivo nuevo está a menos de esto (en píxeles de pantalla) de donde
+# ya está el cursor, no se mueve — filtra el temblor fino que hace difícil
+# clickear en cosas chicas, sin agregarle demora al movimiento real (que
+# siempre supera este umbral de inmediato).
+DEADZONE_CURSOR = 5
+
 ALTURA_AGARRE = 20  # distancia (px) del cursor al borde superior de la ventana al agarrarla, simula agarrar la barra de título
 
+TIEMPO_CIERRE = 1.5    # segundos de puño sostenido (mientras se arrastra) para cerrar la ventana agarrada
+
 MIN_FRAMES_CLICK = 2  # frames mínimos de pellizco crudo para que cuente como click (filtra ruido de 1 frame)
-TIEMPO_CIERRE = 2.5    # segundos de puño sostenido (mientras se arrastra) para cerrar la ventana agarrada
+
+# Scroll con puño cerrado: mientras el puño está cerrado y no se está
+# arrastrando nada, mover la mano en Y scrollea. Al abrir la mano, sigue
+# "deslizando" con desaceleración en vez de frenar en seco (como el scroll
+# con inercia del trackpad). Si el sentido queda invertido, cambiá el
+# signo de ESCALA_SCROLL.
+ESCALA_SCROLL = 12.0       # convierte px de movimiento de mano en unidades de rueda
+FRICCION_SCROLL = 0.90     # cuánta velocidad conserva cada frame tras soltar (más cerca de 1 = desliza más)
+UMBRAL_PARAR_SCROLL = 0.3  # px/frame por debajo del cual se considera detenido y para la inercia
 
 # MediaPipe detecta la mano invertida respecto al frame espejado, por eso se corrige acá
 VOLTEAR_HANDEDNESS = True
@@ -115,6 +136,10 @@ def main():
     contador_pellizco_crudo = {mano: 0 for mano in MANOS}
     llego_a_agarrar = {mano: False for mano in MANOS}
 
+    # Scroll con puño + inercia
+    posicion_y_anterior_puño = {mano: None for mano in MANOS}
+    velocidad_scroll = 0.0
+
     with vision.HandLandmarker.create_from_options(options) as landmarker:
         try:
             while True:
@@ -171,10 +196,16 @@ def main():
                         posiciones[mano] = (objetivo_x, objetivo_y)
                     else:
                         ax, ay = anterior
-                        posiciones[mano] = (
-                            ax + (objetivo_x - ax) * FACTOR_SUAVIZADO,
-                            ay + (objetivo_y - ay) * FACTOR_SUAVIZADO,
-                        )
+                        distancia = ((objetivo_x - ax) ** 2 + (objetivo_y - ay) ** 2) ** 0.5
+                        if distancia > DEADZONE_CURSOR:
+                            posiciones[mano] = (
+                                ax + (objetivo_x - ax) * FACTOR_SUAVIZADO,
+                                ay + (objetivo_y - ay) * FACTOR_SUAVIZADO,
+                            )
+                        # si no, el objetivo está dentro de la deadzone: se
+                        # mantiene la posición actual tal cual (no es "no
+                        # actualizar el suavizado", es directamente ignorar
+                        # este frame para el cursor)
 
                     px, py = int(punta_indice.x * w), int(punta_indice.y * h)
                     cv2.circle(frame, (px, py), 10, (0, 255, 255), -1)
@@ -192,6 +223,9 @@ def main():
                 # --- cursor real del sistema ---
                 # Redimensionando (ambas manos): no se mueve el cursor real.
                 # Arrastrando (una mano): la mano que arrastra controla el cursor.
+                # Puño (scrolleando): tampoco se mueve el cursor, para que la
+                # rueda siga cayendo sobre la misma ventana/control todo el tiempo
+                # en vez de arrastrar el mouse fuera de ahí.
                 # Libre: preferimos la derecha si está, si no la izquierda.
                 if pellizco_der and pellizco_izq:
                     mano_cursor = None
@@ -199,11 +233,11 @@ def main():
                     mano_cursor = "Right"
                 elif pellizco_izq and not pellizco_der:
                     mano_cursor = "Left"
-                elif detectada[MANO_CURSOR]:
+                elif detectada[MANO_CURSOR] and gesto_confirmado[MANO_CURSOR] != "PUÑO":
                     mano_cursor = MANO_CURSOR
-                elif detectada["Left"]:
+                elif detectada["Left"] and gesto_confirmado["Left"] != "PUÑO":
                     mano_cursor = "Left"
-                elif detectada["Right"]:
+                elif detectada["Right"] and gesto_confirmado["Right"] != "PUÑO":
                     mano_cursor = "Right"
                 else:
                     mano_cursor = None
@@ -308,6 +342,38 @@ def main():
                     estado_resize = "sin_agarre"
                     hwnd_resize, titulo_resize = None, None
 
+                # --- scroll con puño cerrado (+ inercia al soltar) ---
+                mano_puño_libre = None
+                if estado_arrastre == "sin_agarre":
+                    puño_der = gesto_confirmado["Right"] == "PUÑO"
+                    puño_izq = gesto_confirmado["Left"] == "PUÑO"
+                    if puño_der and not puño_izq:
+                        mano_puño_libre = "Right"
+                    elif puño_izq and not puño_der:
+                        mano_puño_libre = "Left"
+
+                if mano_puño_libre is not None and posiciones[mano_puño_libre] is not None:
+                    _, y_actual = posiciones[mano_puño_libre]
+                    y_anterior = posicion_y_anterior_puño[mano_puño_libre]
+                    if y_anterior is not None:
+                        velocidad_scroll = y_actual - y_anterior
+                    posicion_y_anterior_puño[mano_puño_libre] = y_actual
+                    # limpiar el registro de la otra mano para que no arranque con
+                    # un salto raro si se usa para scrollear más adelante
+                    otra_mano = "Left" if mano_puño_libre == "Right" else "Right"
+                    posicion_y_anterior_puño[otra_mano] = None
+                else:
+                    # no hay puño activo controlando: se suelta el seguimiento de
+                    # posición, pero la velocidad sigue viva y decae de a poco
+                    posicion_y_anterior_puño["Left"] = None
+                    posicion_y_anterior_puño["Right"] = None
+                    velocidad_scroll *= FRICCION_SCROLL
+                    if abs(velocidad_scroll) < UMBRAL_PARAR_SCROLL:
+                        velocidad_scroll = 0.0
+
+                if abs(velocidad_scroll) > UMBRAL_PARAR_SCROLL:
+                    hacer_scroll(-velocidad_scroll * ESCALA_SCROLL)
+
                 # --- click con pellizco corto ---
                 # Cuenta frames de pellizco CRUDO (sin debounce) por mano. Si se suelta
                 # antes de llegar a FRAMES_DEBOUNCE (el umbral que usa el arrastre para
@@ -380,6 +446,16 @@ def main():
                         cv2.FONT_HERSHEY_SIMPLEX,
                         0.7,
                         (0, 140, 255),
+                        2,
+                    )
+                elif abs(velocidad_scroll) > UMBRAL_PARAR_SCROLL:
+                    cv2.putText(
+                        frame,
+                        f"Scroll ({'activo' if mano_puño_libre else 'inercia'})",
+                        (10, 95),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.7,
+                        (255, 200, 0),
                         2,
                     )
                 else:

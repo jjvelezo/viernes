@@ -19,6 +19,9 @@ ENV/
 *.pem
 *.key
 
+# --- Notas y archivos locales, no se suben ---
+privado/
+
 # --- Editores / configuración local ---
 .vscode/
 .idea/

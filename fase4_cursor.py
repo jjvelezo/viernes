@@ -85,6 +85,13 @@ def clic_izquierdo():
     win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
 
 
+def hacer_scroll(cantidad):
+    """Simula el scroll del mouse en la posición actual del cursor.
+    Positivo = arriba, negativo = abajo. No hace falta que sea múltiplo
+    de 120 (WHEEL_DELTA): Windows acepta deltas chicos para scroll suave."""
+    win32api.mouse_event(win32con.MOUSEEVENTF_WHEEL, 0, 0, int(cantidad), 0)
+
+
 def redimensionar_ventana(hwnd, izquierda, arriba, derecha, abajo):
     """Mueve y redimensiona `hwnd` para que ocupe el rectángulo dado
     (en coordenadas de pantalla). El ancho/alto resultante nunca baja de
