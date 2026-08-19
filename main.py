@@ -28,8 +28,13 @@ INDICE_PUNTA = 8  # landmark de la punta del dedo índice
 
 HISTORIAL_LEN = 5       # cantidad de posiciones a promediar para filtrar temblor
 FACTOR_SUAVIZADO = 0.6  # suavizado exponencial sobre la posición filtrada (1.0 = sin suavizado)
-MARGEN_X = 0.15         # margen de cada borde de la cámara que no mapea a pantalla
-MARGEN_Y = 0.15
+# Margen de cada borde de la cámara que no mapea a pantalla: cuanto más alto,
+# menos hay que mover la mano para llegar a los bordes/esquinas de la pantalla
+# (la zona activa dentro del cuadro se achica). El de Y va más alto porque
+# levantar la mano cerca del borde superior del encuadre es lo más incómodo
+# y además donde MediaPipe pierde antes la detección (mano saliendo de cuadro).
+MARGEN_X = 0.20
+MARGEN_Y = 0.30
 
 ALTURA_AGARRE = 20  # distancia (px) del cursor al borde superior de la ventana al agarrarla, simula agarrar la barra de título
 
@@ -136,8 +141,13 @@ def main():
 
                 gesto_confirmado = estado_pellizco.actualizar(gesto_actual)
 
-                if gesto_confirmado == "PELLIZCO" and cursor_x is not None:
-                    if estado_arrastre == "sin_agarre":
+                # El gesto confirmado (con debounce) manda si seguimos "agarrados" o no.
+                # cursor_x puede ser None por 1-2 frames sueltos aunque el pellizco siga
+                # sostenido (tracking momentáneamente perdido por movimiento rápido/borroso):
+                # eso NO debe soltar la ventana, solo significa "no hay posición nueva este
+                # frame". Soltar de verdad depende únicamente de gesto_confirmado.
+                if gesto_confirmado == "PELLIZCO":
+                    if estado_arrastre == "sin_agarre" and cursor_x is not None:
                         hwnd_bajo, titulo_bajo = obtener_ventana_bajo_cursor()
                         if hwnd_bajo is not None and titulo_bajo:
                             try:
@@ -158,13 +168,15 @@ def main():
                                 estado_arrastre = "agarrado"
                             except (pywintypes.error, ValueError):
                                 pass  # la ventana desapareció justo al intentar agarrarla, se ignora este frame
-                    elif estado_arrastre == "agarrado":
+                    elif estado_arrastre == "agarrado" and cursor_x is not None:
                         try:
                             mover_ventana(hwnd_agarrado, cursor_x - offset_x, cursor_y - offset_y)
                         except ValueError:
                             # se cerró/crasheó la ventana mientras se arrastraba
                             estado_arrastre = "sin_agarre"
                             hwnd_agarrado, titulo_agarrado = None, None
+                    # si cursor_x es None este frame, no hacemos nada: se mantiene el
+                    # estado tal cual hasta el próximo frame con posición válida
                 else:
                     if estado_arrastre == "agarrado" and hwnd_agarrado is not None and cursor_x is not None:
                         try:
