@@ -1,0 +1,51 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# --- Entornos virtuales ---
+venv/
+.venv/
+env/
+ENV/
+
+# --- Variables de entorno / secretos ---
+.env
+.env.*
+*.pem
+*.key
+
+# --- Editores / configuración local ---
+.vscode/
+.idea/
+*.swp
+*.swo
+.claude/
+CLAUDE.md
+.clauderc
+claude_desktop_config.json
+.cursor/
+.cursorrules
+.cursorignore
+.windsurf/
+.windsurfrules
+.continue/
+.aider*
+.roo/
+.roorules
+.clinerules/
+.clinerules
+.copilot/
+.codeium/
+.qodo/
+.amazonq/
+.junie/
+
+# --- Sistema operativo ---
+.DS_Store
+Thumbs.db
+desktop.ini
