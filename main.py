@@ -6,15 +6,22 @@ from collections import deque
 
 import cv2
 import mediapipe as mp
+import pywintypes
+import win32gui
 from mediapipe.tasks.python import vision
 from mediapipe.tasks.python.core.base_options import BaseOptions
 
 from fase2_landmarks import MODEL_PATH, HAND_CONNECTIONS, dibujar_landmarks
+from fase3_gestos import EstadoDebounce, detectar_gesto
 from fase4_cursor import (
     MANO_CURSOR,
+    aplicar_snap_si_corresponde,
+    esta_maximizada,
     mover_cursor,
+    mover_ventana,
     obtener_limites_virtuales,
     obtener_ventana_bajo_cursor,
+    restaurar_ventana,
 )
 
 INDICE_PUNTA = 8  # landmark de la punta del dedo índice
@@ -23,6 +30,8 @@ HISTORIAL_LEN = 5       # cantidad de posiciones a promediar para filtrar temblo
 FACTOR_SUAVIZADO = 0.6  # suavizado exponencial sobre la posición filtrada (1.0 = sin suavizado)
 MARGEN_X = 0.15         # margen de cada borde de la cámara que no mapea a pantalla
 MARGEN_Y = 0.15
+
+ALTURA_AGARRE = 20  # distancia (px) del cursor al borde superior de la ventana al agarrarla, simula agarrar la barra de título
 
 # MediaPipe detecta la mano invertida respecto al frame espejado, por eso se voltea acá
 VOLTEAR_HANDEDNESS = True
@@ -62,6 +71,12 @@ def main():
     historial_x = deque(maxlen=HISTORIAL_LEN)
     historial_y = deque(maxlen=HISTORIAL_LEN)
 
+    # Arrastre de ventanas con pellizco: máquina de estados de 2 posiciones
+    estado_pellizco = EstadoDebounce()  # mismo debounce que fase3_gestos, para no engancharse/soltarse por temblor
+    estado_arrastre = "sin_agarre"  # "sin_agarre" | "agarrado"
+    hwnd_agarrado, titulo_agarrado = None, None
+    offset_x, offset_y = 0, 0  # distancia entre el cursor y la esquina de la ventana al agarrarla
+
     with vision.HandLandmarker.create_from_options(options) as landmarker:
         try:
             while True:
@@ -79,6 +94,7 @@ def main():
 
                 h, w, _ = frame.shape
                 mano_derecha_detectada = False
+                gesto_actual = "NINGUNO"
 
                 for hand_landmarks, handedness in zip(result.hand_landmarks, result.handedness):
                     dibujar_landmarks(frame, hand_landmarks, w, h)
@@ -88,6 +104,7 @@ def main():
                         continue
 
                     mano_derecha_detectada = True
+                    gesto_actual = detectar_gesto(hand_landmarks)
                     punta_indice = hand_landmarks[INDICE_PUNTA]
 
                     historial_x.append(punta_indice.x)
@@ -116,6 +133,46 @@ def main():
                     cursor_x, cursor_y = None, None
                     historial_x.clear()
                     historial_y.clear()
+
+                gesto_confirmado = estado_pellizco.actualizar(gesto_actual)
+
+                if gesto_confirmado == "PELLIZCO" and cursor_x is not None:
+                    if estado_arrastre == "sin_agarre":
+                        hwnd_bajo, titulo_bajo = obtener_ventana_bajo_cursor()
+                        if hwnd_bajo is not None and titulo_bajo:
+                            try:
+                                if esta_maximizada(hwnd_bajo):
+                                    restaurar_ventana(hwnd_bajo)
+
+                                # Como en Windows: no importa dónde caiga el pellizco dentro
+                                # de la ventana, se agarra siempre "por la barra de título"
+                                # -> el cursor queda centrado en X y cerca del borde superior,
+                                # y la ventana salta ahí de una para que se sienta consistente.
+                                izq, arriba, derecha, _ = win32gui.GetWindowRect(hwnd_bajo)
+                                ancho_ventana = derecha - izq
+                                offset_x = ancho_ventana / 2
+                                offset_y = ALTURA_AGARRE
+                                mover_ventana(hwnd_bajo, cursor_x - offset_x, cursor_y - offset_y)
+
+                                hwnd_agarrado, titulo_agarrado = hwnd_bajo, titulo_bajo
+                                estado_arrastre = "agarrado"
+                            except (pywintypes.error, ValueError):
+                                pass  # la ventana desapareció justo al intentar agarrarla, se ignora este frame
+                    elif estado_arrastre == "agarrado":
+                        try:
+                            mover_ventana(hwnd_agarrado, cursor_x - offset_x, cursor_y - offset_y)
+                        except ValueError:
+                            # se cerró/crasheó la ventana mientras se arrastraba
+                            estado_arrastre = "sin_agarre"
+                            hwnd_agarrado, titulo_agarrado = None, None
+                else:
+                    if estado_arrastre == "agarrado" and hwnd_agarrado is not None and cursor_x is not None:
+                        try:
+                            aplicar_snap_si_corresponde(hwnd_agarrado, cursor_x, cursor_y)
+                        except ValueError:
+                            pass  # se cerró justo al soltar, no pasa nada
+                    estado_arrastre = "sin_agarre"
+                    hwnd_agarrado, titulo_agarrado = None, None
 
                 current_time = time.time()
                 fps = 1.0 / (current_time - prev_time) if current_time != prev_time else 0.0
@@ -153,6 +210,27 @@ def main():
                         0.7,
                         (0, 0, 255),
                         2,
+                    )
+
+                if estado_arrastre == "agarrado":
+                    cv2.putText(
+                        frame,
+                        f"Arrastrando: {titulo_agarrado}",
+                        (10, 125),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.7,
+                        (0, 140, 255),
+                        2,
+                    )
+                else:
+                    cv2.putText(
+                        frame,
+                        "Arrastre: libre (pellizca sobre una ventana para agarrarla)",
+                        (10, 125),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.6,
+                        (180, 180, 180),
+                        1,
                     )
 
                 cv2.imshow("Fase 5 - Mouse virtual", frame)
