@@ -8,8 +8,9 @@ import win32api
 import win32con
 import win32gui
 
-MANO_CURSOR = "Right"  # única mano que mueve el cursor por ahora
+MANO_CURSOR = "Right"  # mano por defecto para el cursor cuando ninguna mano está pellizcando
 UMBRAL_SNAP = 20  # píxeles de cercanía a un borde de monitor para activar el snap tipo Windows
+TAMANO_MINIMO = 100  # ancho/alto mínimo (px) al redimensionar, para no colapsar la ventana a 0
 
 # Declara el proceso DPI-aware para que las coordenadas de pantalla
 # coincidan con los píxeles reales (evita desalineación con pantallas escaladas).
@@ -67,6 +68,47 @@ def mover_ventana(hwnd, x, y):
         raise ValueError(f"No se pudo mover la ventana {hwnd}: {error}") from error
 
 
+def cerrar_ventana(hwnd):
+    """Pide cerrar la ventana `hwnd` (equivalente a hacer clic en la X:
+    respeta diálogos de "guardar cambios" de la propia aplicación)."""
+    if not win32gui.IsWindow(hwnd):
+        raise ValueError(f"El handle {hwnd} ya no corresponde a una ventana válida.")
+    try:
+        win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
+    except pywintypes.error as error:
+        raise ValueError(f"No se pudo cerrar la ventana {hwnd}: {error}") from error
+
+
+def clic_izquierdo():
+    """Simula un clic izquierdo del mouse en la posición actual del cursor."""
+    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+
+
+def redimensionar_ventana(hwnd, izquierda, arriba, derecha, abajo):
+    """Mueve y redimensiona `hwnd` para que ocupe el rectángulo dado
+    (en coordenadas de pantalla). El ancho/alto resultante nunca baja de
+    TAMANO_MINIMO, para que la ventana no colapse si las manos se cruzan."""
+    if not win32gui.IsWindow(hwnd):
+        raise ValueError(f"El handle {hwnd} ya no corresponde a una ventana válida.")
+
+    ancho = max(int(derecha - izquierda), TAMANO_MINIMO)
+    alto = max(int(abajo - arriba), TAMANO_MINIMO)
+
+    try:
+        win32gui.SetWindowPos(
+            hwnd,
+            0,
+            int(izquierda),
+            int(arriba),
+            ancho,
+            alto,
+            win32con.SWP_NOZORDER,
+        )
+    except pywintypes.error as error:
+        raise ValueError(f"No se pudo redimensionar la ventana {hwnd}: {error}") from error
+
+
 def obtener_area_trabajo_monitor(x, y):
     """(izq, arriba, derecha, abajo) del área de trabajo (sin la barra de
     tareas) del monitor que contiene el punto (x, y). Necesario para que
@@ -122,16 +164,26 @@ def aplicar_snap_si_corresponde(hwnd, x, y):
     return False
 
 
-def obtener_ventana_bajo_cursor():
-    """(hwnd, titulo) de la ventana bajo el cursor, o (None, None) si no hay ninguna."""
-    x, y = win32gui.GetCursorPos()
-    hwnd = win32gui.WindowFromPoint((x, y))
+def obtener_ventana_en_punto(x, y):
+    """(hwnd, titulo) de la ventana en el punto de pantalla (x, y), o
+    (None, None) si no hay ninguna. Sirve para consultar "¿qué ventana hay
+    ahí?" en cualquier posición, no solo donde está el cursor real."""
+    hwnd = win32gui.WindowFromPoint((int(x), int(y)))
     if not hwnd:
         return None, None
 
+    # WindowFromPoint puede devolver un control interno (un botón, un
+    # textbox); GetAncestor con GA_ROOT sube hasta la ventana de nivel
+    # superior, que es la que de verdad nos interesa.
     hwnd_raiz = win32gui.GetAncestor(hwnd, win32con.GA_ROOT)
     titulo = win32gui.GetWindowText(hwnd_raiz)
     return hwnd_raiz, titulo
+
+
+def obtener_ventana_bajo_cursor():
+    """(hwnd, titulo) de la ventana bajo el cursor real, o (None, None)."""
+    x, y = win32gui.GetCursorPos()
+    return obtener_ventana_en_punto(x, y)
 
 
 def pedir_entero(mensaje):
