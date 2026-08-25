@@ -64,8 +64,9 @@ TEXTO_ACEPTAR_COOKIES = "Aceptar todas"
 
 
 INSTRUCCION_RESUMEN = (
-    "Respondé de forma breve y resumida, dos o tres oraciones cortas como"
-    " mucho — la respuesta se va a leer en voz alta."
+    "Respondé de forma directa y concisa, sin rodeos, pero sin ser ambiguo"
+    " ni omitir información importante de la respuesta — la respuesta se"
+    " va a leer en voz alta."
 )
 
 
@@ -189,7 +190,7 @@ VOZ_TTS = "es-MX-DaliaNeural"  # edge-tts, español de México, mujer — se
 # siguiente candidata más natural. Costo: hace falta internet (llamada a
 # la nube gratis de Microsoft por cada frase). Otras ya escuchadas si esta
 # tampoco convence: "es-AR-ElenaNeural" (Argentina), "es-US-PalomaNeural".
-RATE_TTS = "+25%"  # edge-tts habla lento por defecto; ajustar a gusto
+RATE_TTS = "+15%"  # edge-tts habla lento por defecto; +25% resultó demasiado, +15% es el punto justo
 
 
 def _reproducir_mp3(ruta):
