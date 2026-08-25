@@ -6,6 +6,7 @@ se arrastra = cerrar la ventana."""
 
 import math
 import sys
+import threading
 import time
 from collections import deque
 
@@ -25,7 +26,6 @@ from fase4_cursor import (
     clic_izquierdo,
     esta_maximizada,
     hacer_scroll,
-    lanzar_ventana_lateral,
     mover_cursor,
     mover_ventana,
     obtener_limites_virtuales,
@@ -47,7 +47,7 @@ FACTOR_SUAVIZADO = 0.8  # suavizado exponencial sobre la posición filtrada (1.0
 # OJO: agrandar el margen también amplifica el temblor natural de la mano
 # (una divide por (1 - 2*margen) en mapear_con_margen), por eso hace falta
 # DEADZONE_CURSOR de abajo para compensarlo en precisión de click.
-MARGEN_X = 0.20
+MARGEN_X = 0.10
 MARGEN_Y = 0.30
 
 # Si el objetivo nuevo está a menos de esto (en píxeles de pantalla) de donde
@@ -69,15 +69,14 @@ ONE_EURO_DCUTOFF = 1.0    # Hz, suaviza la propia estimación interna de velocid
 
 ALTURA_AGARRE = 20  # distancia (px) del cursor al borde superior de la ventana al agarrarla, simula agarrar la barra de título
 
-TIEMPO_CIERRE = 1.5    # segundos de puño sostenido (mientras se arrastra) para cerrar la ventana agarrada
+# El pellizco solo agarra la ventana si cae dentro de esta franja (px, medida
+# desde el borde superior de la ventana) — como con el mouse real, que solo
+# arrastra la ventana si se hace click en la barra de título, no en cualquier
+# parte de su contenido. Un pellizco más abajo de esta franja no agarra nada
+# (y sigue contando como click corto si se suelta rápido, ver más abajo).
+ZONA_AGARRE_TITULO = 45
 
-# Gesto de "lanzar" ventana: si al soltar el pellizco la mano venía con
-# velocidad horizontal alta, la ventana se manda a la mitad izquierda o
-# derecha de la pantalla (como un snap forzado), en vez del snap normal por
-# cercanía al borde. HISTORIAL_VELOCIDAD_LEN frames recientes de posición
-# (mientras se arrastra) se usan para estimar esa velocidad al soltar.
-UMBRAL_VELOCIDAD_LANZAR = 1500  # px/s de velocidad horizontal para que cuente como "lanzazo" (ajustar probando)
-HISTORIAL_VELOCIDAD_LEN = 5
+TIEMPO_CIERRE = 1.5    # segundos de puño sostenido (mientras se arrastra) para cerrar la ventana agarrada
 
 MIN_FRAMES_CLICK = 2  # frames mínimos de pellizco crudo para que cuente como click (filtra ruido de 1 frame)
 
@@ -152,6 +151,44 @@ def mano_real(label):
     return label
 
 
+class LectorCamara:
+    """Lee la cámara en un hilo aparte, en loop libre, y siempre guarda solo
+    el último frame leído (no una cola: los frames viejos se descartan sin
+    procesar). Antes, cap.read() bloqueaba el hilo principal esperando a la
+    cámara y recién después arrancaba la inferencia de MediaPipe + toda la
+    lógica de gestos — todo en serie. Así, la espera de la cámara y el
+    procesamiento corren en paralelo: cada uno a su propio ritmo, en vez de
+    sumarse frame a frame."""
+
+    def __init__(self, cap):
+        self.cap = cap
+        self.lock = threading.Lock()
+        self.ret, self.frame = cap.read()
+        self.generacion = 0  # se incrementa en cada frame nuevo, para que el hilo principal detecte duplicados
+        self.detenido = False
+        self.hilo = threading.Thread(target=self._loop, daemon=True)
+        self.hilo.start()
+
+    def _loop(self):
+        while not self.detenido:
+            ret, frame = self.cap.read()
+            with self.lock:
+                self.ret, self.frame = ret, frame
+                self.generacion += 1
+
+    def leer(self):
+        """(ret, frame, generacion). `generacion` deja saber al que llama si
+        este frame ya lo había leído antes (cámara más lenta que el
+        procesamiento), para no correr MediaPipe dos veces sobre la misma
+        imagen."""
+        with self.lock:
+            return self.ret, self.frame, self.generacion
+
+    def detener(self):
+        self.detenido = True
+        self.hilo.join(timeout=1.0)
+
+
 def main():
     # cv2.VideoCapture(0) sin backend explícito termina usando uno más lento
     # en Windows (~21 FPS reales aunque la cámara pueda dar 30). Forzar MSMF
@@ -161,10 +198,19 @@ def main():
     cap = cv2.VideoCapture(0, cv2.CAP_MSMF)
     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    cap.set(cv2.CAP_PROP_FPS, 60)  # pedido; el driver de la cámara puede ignorarlo y quedarse en su tope real (ver el print de abajo)
 
     if not cap.isOpened():
         print("Error: no se pudo abrir la cámara.", file=sys.stderr)
         sys.exit(1)
+
+    print(
+        f"Cámara: {cap.get(cv2.CAP_PROP_FRAME_WIDTH):.0f}x{cap.get(cv2.CAP_PROP_FRAME_HEIGHT):.0f} "
+        f"@ {cap.get(cv2.CAP_PROP_FPS):.0f}fps (según el driver; el FPS real del loop lo indica el overlay)",
+        file=sys.stderr,
+    )
+
+    lector = LectorCamara(cap)  # lee la cámara en su propio hilo, ver la clase más arriba
 
     x_min_pantalla, y_min_pantalla, ancho_pantalla, alto_pantalla = obtener_limites_virtuales()
 
@@ -194,7 +240,6 @@ def main():
     mano_arrastre = None
     offset_x, offset_y = 0, 0
     tiempo_inicio_cierre = None  # timestamp de cuándo empezó el puño sostenido, o None
-    historial_arrastre = deque(maxlen=HISTORIAL_VELOCIDAD_LEN)  # (t, x, y) recientes para el gesto de "lanzar" al soltar
 
     # Redimensionar con las dos manos a la vez
     estado_resize = "sin_agarre"  # "sin_agarre" | "agarrado"
@@ -209,10 +254,20 @@ def main():
     posicion_y_anterior_puño = {mano: None for mano in MANOS}
     velocidad_scroll = 0.0
 
+    ultima_generacion = -1
+
     with vision.HandLandmarker.create_from_options(options) as landmarker:
         try:
             while True:
-                ret, frame = cap.read()
+                ret, frame, generacion = lector.leer()
+                if generacion == ultima_generacion:
+                    # el hilo de cámara todavía no sacó un frame nuevo: nada
+                    # que procesar todavía, evita correr MediaPipe dos veces
+                    # sobre la misma imagen
+                    time.sleep(0.001)
+                    continue
+                ultima_generacion = generacion
+
                 if not ret:
                     print("Error: no se pudo leer el frame de la cámara.", file=sys.stderr)
                     break
@@ -359,28 +414,29 @@ def main():
                         hwnd_bajo, titulo_bajo = obtener_ventana_en_punto(cx, cy)
                         if hwnd_bajo is not None and titulo_bajo:
                             try:
-                                if esta_maximizada(hwnd_bajo):
-                                    restaurar_ventana(hwnd_bajo)
+                                # Como con el mouse real: solo agarra si el pellizco cae
+                                # sobre la franja superior de la ventana (la "barra de
+                                # título"), no en cualquier parte de su contenido.
+                                _, arriba, _, _ = win32gui.GetWindowRect(hwnd_bajo)
+                                if cy - arriba <= ZONA_AGARRE_TITULO:
+                                    if esta_maximizada(hwnd_bajo):
+                                        restaurar_ventana(hwnd_bajo)
 
-                                # Como en Windows: no importa dónde caiga el pellizco dentro
-                                # de la ventana, se agarra siempre "por la barra de título".
-                                izq, arriba, derecha, _ = win32gui.GetWindowRect(hwnd_bajo)
-                                ancho_ventana = derecha - izq
-                                offset_x = ancho_ventana / 2
-                                offset_y = ALTURA_AGARRE
-                                mover_ventana(hwnd_bajo, cx - offset_x, cy - offset_y)
+                                    izq, arriba, derecha, _ = win32gui.GetWindowRect(hwnd_bajo)
+                                    ancho_ventana = derecha - izq
+                                    offset_x = ancho_ventana / 2
+                                    offset_y = ALTURA_AGARRE
+                                    mover_ventana(hwnd_bajo, cx - offset_x, cy - offset_y)
 
-                                hwnd_agarrado, titulo_agarrado = hwnd_bajo, titulo_bajo
-                                mano_arrastre = mano_activa
-                                estado_arrastre = "agarrado"
-                                llego_a_agarrar[mano_activa] = True
-                                historial_arrastre.clear()
+                                    hwnd_agarrado, titulo_agarrado = hwnd_bajo, titulo_bajo
+                                    mano_arrastre = mano_activa
+                                    estado_arrastre = "agarrado"
+                                    llego_a_agarrar[mano_activa] = True
                             except (pywintypes.error, ValueError):
                                 pass  # la ventana desapareció justo al intentar agarrarla
                     elif estado_arrastre == "agarrado" and mano_arrastre == mano_activa and pos is not None:
                         try:
                             mover_ventana(hwnd_agarrado, pos[0] - offset_x, pos[1] - offset_y)
-                            historial_arrastre.append((t_actual, pos[0], pos[1]))
                         except ValueError:
                             estado_arrastre = "sin_agarre"
                             hwnd_agarrado, titulo_agarrado = None, None
@@ -388,7 +444,6 @@ def main():
                         # cambió la mano que pellizca sin soltar antes: soltamos sin snap
                         estado_arrastre = "sin_agarre"
                         hwnd_agarrado, titulo_agarrado = None, None
-                        historial_arrastre.clear()
                     # si pos es None este frame (tracking momentáneo perdido), no hacemos
                     # nada: se mantiene el estado tal cual hasta el próximo frame válido
                 else:
@@ -396,29 +451,12 @@ def main():
                     if estado_arrastre == "agarrado":
                         pos_suelta = posiciones.get(mano_arrastre)
                         if hwnd_agarrado is not None and pos_suelta is not None:
-                            # Velocidad horizontal de soltada, estimada entre el
-                            # primer y el último punto guardados durante el
-                            # arrastre: si viene rápido, se "lanza" la ventana al
-                            # lado en vez de aplicar el snap normal por cercanía.
-                            velocidad_x = 0.0
-                            if len(historial_arrastre) >= 2:
-                                t0, x0, _ = historial_arrastre[0]
-                                t1, x1, _ = historial_arrastre[-1]
-                                dt = t1 - t0
-                                if dt > 0:
-                                    velocidad_x = (x1 - x0) / dt
-
                             try:
-                                if abs(velocidad_x) > UMBRAL_VELOCIDAD_LANZAR:
-                                    lado = "izquierda" if velocidad_x < 0 else "derecha"
-                                    lanzar_ventana_lateral(hwnd_agarrado, lado, pos_suelta[0], pos_suelta[1])
-                                else:
-                                    aplicar_snap_si_corresponde(hwnd_agarrado, pos_suelta[0], pos_suelta[1])
+                                aplicar_snap_si_corresponde(hwnd_agarrado, pos_suelta[0], pos_suelta[1])
                             except ValueError:
                                 pass
                         estado_arrastre = "sin_agarre"
                         hwnd_agarrado, titulo_agarrado = None, None
-                        historial_arrastre.clear()
 
                 # --- redimensionar con las dos manos ---
                 if pellizco_der and pellizco_izq and posiciones["Right"] is not None and posiciones["Left"] is not None:
@@ -581,6 +619,7 @@ def main():
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
         finally:
+            lector.detener()
             cap.release()
             cv2.destroyAllWindows()
 
