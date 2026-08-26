@@ -105,6 +105,12 @@ def setup(icon):
         icon.icon = ICONO_ESCUCHANDO
         print("  Escuchando...")
 
+    def procesar_en_hilo_aparte(audio):
+        try:
+            _procesar_comando(audio, modelo)
+        finally:
+            icon.icon = ICONO_INACTIVO
+
     def al_soltar(_evento):
         if not estado.tecla_abajo:
             return
@@ -112,10 +118,14 @@ def setup(icon):
         estado.grabando = False
         icon.icon = ICONO_PROCESANDO
         audio = np.concatenate(estado.fragmentos, axis=0).flatten() if estado.fragmentos else np.zeros(0, dtype="float32")
-        try:
-            _procesar_comando(audio, modelo)
-        finally:
-            icon.icon = ICONO_INACTIVO
+        # El hook de teclado (`keyboard`) llama a este callback desde su
+        # propio hilo, que es el mismo que procesa el hook de bajo nivel de
+        # Windows (WH_KEYBOARD_LL) — si ese hilo se queda bloqueado muchos
+        # segundos (Whisper + Playwright/ChatGPT pueden tardar bastante),
+        # Windows puede considerar el hook "colgado" y desengancharlo solo.
+        # Por eso el procesamiento se despacha a un hilo aparte en vez de
+        # correr acá adentro.
+        threading.Thread(target=procesar_en_hilo_aparte, args=(audio,), daemon=True).start()
 
     keyboard.on_press_key(TECLA_PTT, al_presionar)
     keyboard.on_release_key(TECLA_PTT, al_soltar)

@@ -15,6 +15,7 @@ fase6_asistente.py que corresponda. Nada de LLM/Ollama todavía (eso es la
 Etapa 2) — si el comando no matchea ninguna palabra clave, se lo ignora."""
 
 import difflib
+import re
 import sys
 import unicodedata
 
@@ -23,8 +24,9 @@ from faster_whisper import WhisperModel
 import fase6_asistente as asistente
 import fase8_wakeword as wakeword
 
-PALABRAS_ABRIR = ("abri", "abre", "abrime", "abrir")
-PALABRAS_LEER = ("lee", "leeme", "leer")
+PALABRAS_ABRIR = ("abri", "abre", "abrime", "abrir", "abras", "abran")
+PALABRAS_LEER = ("lee", "leeme", "leer", "leerme", "leelo", "leela")
+ARTICULOS = ("el", "la", "los", "las", "un", "una")
 SIMILITUD_MINIMA_CHATGPT = 0.7  # calibrado para no confundir palabras comunes como "chapa" (0.667) o "chateando" (0.5) con mishears reales de "chatgpt"
 
 
@@ -37,12 +39,23 @@ def _normalizar(texto):
     return "".join(c for c in sin_tildes if c.isalnum() or c.isspace())
 
 
-def _quitar_prefijo(palabras_normalizadas, prefijos):
-    """Si la primera palabra está en `prefijos`, la saca. Devuelve el
-    resto unido (ej. el nombre de la app a abrir)."""
-    if palabras_normalizadas and palabras_normalizadas[0] in prefijos:
-        return " ".join(palabras_normalizadas[1:]).strip()
-    return " ".join(palabras_normalizadas).strip()
+def _indice_disparador(palabras, disparadores):
+    """Índice de la primera palabra de `palabras` que está en
+    `disparadores`, o None. No asume que el disparador sea la primera
+    palabra del comando — "abrí Chrome" y "quiero que abras Chrome"
+    tienen que matchear los dos."""
+    for indice, palabra in enumerate(palabras):
+        if palabra in disparadores:
+            return indice
+    return None
+
+
+def _quitar_articulo_inicial(palabras):
+    """Saca artículos al principio ("el", "la"...) — sin esto, "abrí el
+    bloc de notas" busca la app "el bloc de notas", que no matchea nada."""
+    while palabras and palabras[0] in ARTICULOS:
+        palabras = palabras[1:]
+    return palabras
 
 
 def _menciona_chatgpt(normalizado, palabras):
@@ -70,8 +83,10 @@ def interpretar_y_ejecutar(texto_crudo):
         return None
 
     try:
-        if palabras[0] in PALABRAS_ABRIR:
-            nombre = _quitar_prefijo(palabras, PALABRAS_ABRIR)
+        indice_abrir = _indice_disparador(palabras, PALABRAS_ABRIR)
+        if indice_abrir is not None:
+            resto = _quitar_articulo_inicial(palabras[indice_abrir + 1 :])
+            nombre = " ".join(resto).strip()
             if not nombre:
                 return "¿Qué querés que abra?"
             asistente.abrir_app(nombre)
@@ -80,12 +95,15 @@ def interpretar_y_ejecutar(texto_crudo):
         if _menciona_chatgpt(normalizado, palabras):
             return asistente.preguntar_chatgpt(texto_crudo.strip())
 
-        if palabras[0] in PALABRAS_LEER:
+        if _indice_disparador(palabras, PALABRAS_LEER) is not None:
             asistente.leer_ventana_activa()
             return None
 
         if "volumen" in normalizado:
-            if "subi" in normalizado or "sube" in normalizado:
+            numero = re.search(r"\d+", normalizado)
+            if numero:
+                asistente.establecer_volumen(int(numero.group()))
+            elif "subi" in normalizado or "sube" in normalizado:
                 asistente.subir_volumen()
             elif "baja" in normalizado or "baji" in normalizado:
                 asistente.bajar_volumen()

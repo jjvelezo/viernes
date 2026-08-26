@@ -6,6 +6,7 @@ mouse gestual."""
 
 import asyncio
 import ctypes
+import difflib
 import os
 import sys
 import tempfile
@@ -40,6 +41,21 @@ APPS_CONOCIDAS = {
 }
 
 
+def _resolver_ejecutable(clave):
+    """Busca `clave` en APPS_CONOCIDAS: primero exacto, y si no hay match
+    prueba el más parecido (difflib) — el texto que llega acá viene de una
+    transcripción de voz, así que "el bloc de notas" (con artículo) o
+    variantes con alguna letra de más/menos son moneda corriente, no el
+    caso raro. Si nada se parece lo suficiente, devuelve `clave` tal cual
+    para que abrir_app la use como nombre de ejecutable directo."""
+    if clave in APPS_CONOCIDAS:
+        return APPS_CONOCIDAS[clave]
+    parecidos = difflib.get_close_matches(clave, APPS_CONOCIDAS.keys(), n=1, cutoff=0.7)
+    if parecidos:
+        return APPS_CONOCIDAS[parecidos[0]]
+    return clave
+
+
 def abrir_app(nombre):
     """Abre la app `nombre` (nombre común en español, o directamente el
     ejecutable). Usa os.startfile, que resuelve tanto ejecutables en PATH
@@ -47,8 +63,7 @@ def abrir_app(nombre):
     clave "App Paths" del registro (chrome, winword, etc. quedan ahí
     aunque no estén en PATH) — sin pasar por una shell, para no arrastrar
     riesgo de inyección con nombres raros."""
-    clave = nombre.strip().lower()
-    ejecutable = APPS_CONOCIDAS.get(clave, clave)
+    ejecutable = _resolver_ejecutable(nombre.strip().lower())
     try:
         os.startfile(ejecutable)
     except OSError as error:
@@ -66,7 +81,12 @@ TEXTO_ACEPTAR_COOKIES = "Aceptar todas"
 INSTRUCCION_RESUMEN = (
     "Respondé de forma directa y concisa, sin rodeos, pero sin ser ambiguo"
     " ni omitir información importante de la respuesta — la respuesta se"
-    " va a leer en voz alta."
+    " va a leer en voz alta. Respondé siempre con una oración completa,"
+    " nunca solo un número o una palabra sueltos (ej. a una cuenta"
+    " matemática respondé "
+    '"La suma es 42" y no solo "42")'
+    ", porque chatgpt.com renderiza esas respuestas sueltas con una"
+    " animación que no se puede leer del HTML."
 )
 
 
@@ -111,7 +131,10 @@ def preguntar_chatgpt(pregunta, tiempo_limite_s=45):
             caja = pagina.get_by_placeholder(PLACEHOLDER_CAJA_TEXTO)
             caja.click(timeout=tiempo_limite_s * 1000)
             caja.fill(pregunta_completa)
-            pagina.keyboard.press("Enter")
+            # Enter solo a veces mandaba el mensaje (quedaba escrito en la
+            # caja sin enviar, y todo lo de abajo esperaba 45s en vano) —
+            # clickear el botón de enviar es más confiable.
+            pagina.get_by_label("Enviar mensaje").click(timeout=tiempo_limite_s * 1000)
 
             try:
                 boton_detener = pagina.get_by_label("Detener la generación")
@@ -120,13 +143,33 @@ def preguntar_chatgpt(pregunta, tiempo_limite_s=45):
             except Exception:
                 pagina.wait_for_timeout(2000)  # fallback simple si el botón no está donde se esperaba
 
-            transcripcion = pagina.locator(SELECTOR_TRANSCRIPCION).first
-            transcripcion.wait_for(timeout=tiempo_limite_s * 1000)
-            texto_completo = transcripcion.inner_text()
+            transcripciones = pagina.locator(SELECTOR_TRANSCRIPCION)
+            transcripciones.first.wait_for(timeout=tiempo_limite_s * 1000)
 
-            if not texto_completo:
+            # A veces chatgpt.com deja temporalmente DOS elementos
+            # [data-conversation-transcript] visibles a la vez (parece un
+            # duplicado usado para la animación de "optimistic update") y
+            # uno de los dos se queda con el contenido viejo/incompleto —
+            # tomar solo ".first" a veces agarraba el que no tenía la
+            # respuesta todavía. Por eso se prueban todos los que haya.
+            # También hace falta reintentar con una pausa corta: para
+            # respuestas muy cortas (ej. "42."), el botón "Detener la
+            # generación" puede desaparecer una fracción de segundo antes
+            # de que el texto final termine de asentarse en el DOM.
+            respuesta = ""
+            for _intento in range(4):
+                for indice in range(transcripciones.count()):
+                    texto_completo = transcripciones.nth(indice).inner_text()
+                    respuesta = _extraer_respuesta(texto_completo, pregunta_completa)
+                    if respuesta:
+                        break
+                if respuesta:
+                    break
+                pagina.wait_for_timeout(500)
+
+            if not respuesta:
                 raise ValueError("ChatGPT no respondió a tiempo.")
-            return _extraer_respuesta(texto_completo, pregunta_completa)
+            return respuesta
         finally:
             contexto.close()
 
