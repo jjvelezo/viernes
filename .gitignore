@@ -18,6 +18,7 @@ ENV/
 .env.*
 *.pem
 *.key
+.spotify_token_cache
 
 # --- Notas y archivos locales, no se suben ---
 privado/

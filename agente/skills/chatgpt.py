@@ -28,6 +28,8 @@ ve ni roba el foco) pero Chromium la sigue tratando como una ventana
 normal para efectos de renderizado, asi que no se cuelga."""
 
 import atexit
+import re
+import time
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -37,6 +39,17 @@ PLACEHOLDER_CAJA_TEXTO = "Pregúntale a ChatGPT"
 SELECTOR_TRANSCRIPCION = "[data-conversation-transcript]:visible"
 TEXTO_ACEPTAR_COOKIES = "Aceptar todas"
 TIEMPO_LIMITE_S = 45
+
+# Memoria corta de continuidad: en vez de mantener una pestana/sesion de
+# chatgpt.com abierta entre preguntas (fragil -- que pestana reusar, como
+# saber si sigue viva) o clasificar "es la misma conversacion o no" con
+# otro modelo, se guarda solo el ultimo intercambio y se le manda como
+# contexto a la pregunta nueva SI paso poco tiempo. Cada pregunta sigue
+# siendo un mensaje anonimo independiente en chatgpt.com (mismo mecanismo
+# de siempre) -- lo que cambia es que el mensaje mismo arrastra el
+# contexto necesario para que la respuesta tenga sentido como continuacion.
+VENTANA_CONTINUIDAD_S = 600  # 10 minutos sin preguntar nada mas = se considera un tema nuevo
+_ultimo_intercambio = None  # {"pregunta": ..., "respuesta": ..., "hora": ...}
 
 INSTRUCCION_RESUMEN = (
     "Respondé de forma directa y concisa, sin rodeos, pero sin ser ambiguo"
@@ -82,13 +95,26 @@ def preguntar_internet(pregunta: str) -> str:
     """Busca la respuesta a una pregunta en internet (via ChatGPT) cuando
     el conocimiento propio no alcanza -- informacion reciente, clima,
     noticias -- o cuando el usuario pide explicitamente buscar en
-    internet o preguntarle a ChatGPT.
+    internet o preguntarle a ChatGPT. Si preguntas algo relacionado poco
+    despues de la pregunta anterior, se manda como continuacion de esa
+    misma conversacion automaticamente -- no hace falta repetir el
+    contexto.
 
     Args:
         pregunta: la pregunta a buscar, tal como la hizo el usuario.
     """
+    global _ultimo_intercambio
     contexto = _obtener_contexto()
-    pregunta_completa = f"{pregunta.strip()} {INSTRUCCION_RESUMEN}"
+
+    contexto_previo = ""
+    if _ultimo_intercambio and (time.time() - _ultimo_intercambio["hora"]) < VENTANA_CONTINUIDAD_S:
+        contexto_previo = (
+            f'(Para contexto: hace poco te pregunte "{_ultimo_intercambio["pregunta"]}" y '
+            f'respondiste "{_ultimo_intercambio["respuesta"]}". Si la pregunta de abajo es una '
+            "continuacion de eso, tenelo en cuenta; si es sobre otra cosa, respondela aparte "
+            "sin problema.) "
+        )
+    pregunta_completa = f"{contexto_previo}{pregunta.strip()} {INSTRUCCION_RESUMEN}"
 
     # Pestana nueva por pregunta (no la misma de la vez anterior): cada
     # pregunta tiene que ser una conversacion nueva e independiente en
@@ -132,17 +158,34 @@ def preguntar_internet(pregunta: str) -> str:
 
         if not respuesta:
             raise ValueError("ChatGPT no respondió a tiempo.")
+        _ultimo_intercambio = {"pregunta": pregunta, "respuesta": respuesta, "hora": time.time()}
         return respuesta
     finally:
         pagina.close()
 
 
+PATRON_RUIDO_CITAS = re.compile(
+    r"^(fuentes?|\+\d+|[\w.-]+\.\w{2,})$", re.IGNORECASE
+)  # "Fuentes", "+2", o un dominio suelto tipo "primero.com" -- los chips
+# de citas que chatgpt.com agrega al final de una respuesta con fuentes
+
+
 def _extraer_respuesta(transcripcion_completa, pregunta):
     partes = [parte.strip() for parte in transcripcion_completa.split("\n\n") if parte.strip()]
     if pregunta not in partes:
-        return transcripcion_completa.strip()
-    indice = partes.index(pregunta)
-    return "\n\n".join(partes[indice + 2:]).strip()
+        partes_respuesta = partes
+    else:
+        indice = partes.index(pregunta)
+        partes_respuesta = partes[indice + 2 :]
+
+    # Los chips de citas vienen como fragmentos sueltos y cortos al final
+    # (una letra, un dominio, "Fuentes") -- se descartan.
+    while partes_respuesta and (
+        len(partes_respuesta[-1]) <= 3 or PATRON_RUIDO_CITAS.match(partes_respuesta[-1])
+    ):
+        partes_respuesta.pop()
+
+    return "\n\n".join(partes_respuesta).strip()
 
 
 TOOLS = [preguntar_internet]

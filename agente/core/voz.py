@@ -9,6 +9,7 @@ su propia carpeta o repo despues sin arrastrar el resto de Viernes."""
 import asyncio
 import ctypes
 import tempfile
+import threading
 from pathlib import Path
 
 import edge_tts
@@ -107,15 +108,32 @@ def detener_reproduccion():
     mci(f"close {ALIAS_MCI}", None, 0, None)
 
 
+def _generar_mp3(texto, ruta_destino):
+    """Corre la generacion de audio (asyncio) en un hilo nuevo y aislado.
+    Necesario porque si el turno uso preguntar_internet (Playwright) antes
+    de llegar aca, el hilo que procesa el turno puede quedar con el manejo
+    interno de asyncio "contaminado" por Playwright, y un asyncio.run()
+    directo en ese mismo hilo revienta con RuntimeError ("cannot be called
+    from a running event loop") -- visto en la practica. Un hilo nuevo
+    arranca siempre con un estado de asyncio limpio, sin depender de
+    entender el detalle exacto de que deja mal configurado Playwright."""
+
+    def _tarea():
+        comunicador = edge_tts.Communicate(texto, VOZ_TTS, rate=RATE_TTS)
+        asyncio.run(comunicador.save(str(ruta_destino)))
+
+    hilo = threading.Thread(target=_tarea)
+    hilo.start()
+    hilo.join()
+
+
 def hablar(texto):
     """Convierte `texto` a voz (edge-tts) y lo reproduce. Genera un mp3
-    temporal y lo borra al terminar -- copiado tal cual de
-    fase6_asistente.hablar()."""
+    temporal y lo borra al terminar."""
     with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as temporal:
         ruta_temp = Path(temporal.name)
     try:
-        comunicador = edge_tts.Communicate(texto, VOZ_TTS, rate=RATE_TTS)
-        asyncio.run(comunicador.save(str(ruta_temp)))
+        _generar_mp3(texto, ruta_temp)
         _reproducir_mp3(ruta_temp)
     finally:
         ruta_temp.unlink(missing_ok=True)
