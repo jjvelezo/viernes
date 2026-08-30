@@ -88,6 +88,13 @@ def transcribir(audio, modelo):
 
 ALIAS_MCI = "voz_agente"
 
+# Se activa cuando alguien llama detener_reproduccion() (barge-in: la
+# persona empieza a hablar mientras el agente todavia contesta). hablar()
+# lo limpia al arrancar y lo chequea DESPUES de generar el mp3 -- si no,
+# un barge-in que cae mientras edge-tts todavia esta generando el audio
+# (1-3s) no cortaba nada y la voz igual arrancaba pisando al usuario.
+_cancelado = threading.Event()
+
 
 def _reproducir_mp3(ruta):
     """Reproduce un mp3 con el driver MCI de Windows -- sin dependencias
@@ -105,6 +112,7 @@ def detener_reproduccion():
     para barge-in (la persona aprieta F9 mientras el agente todavia esta
     contestando). Segura de llamar aunque no haya nada reproduciendose
     (MCI devuelve un error que se ignora)."""
+    _cancelado.set()  # corta tambien si todavia estamos generando el mp3
     mci = ctypes.windll.winmm.mciSendStringW
     mci(f"stop {ALIAS_MCI}", None, 0, None)
     mci(f"close {ALIAS_MCI}", None, 0, None)
@@ -131,11 +139,15 @@ def _generar_mp3(texto, ruta_destino):
 
 def hablar(texto):
     """Convierte `texto` a voz (edge-tts) y lo reproduce. Genera un mp3
-    temporal y lo borra al terminar."""
+    temporal y lo borra al terminar. Si llega un barge-in
+    (detener_reproduccion) mientras se genera el audio, no llega a sonar."""
+    _cancelado.clear()
     with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as temporal:
         ruta_temp = Path(temporal.name)
     try:
         _generar_mp3(texto, ruta_temp)
+        if _cancelado.is_set():
+            return  # el usuario ya empezo a hablar: no pisar con la voz
         _reproducir_mp3(ruta_temp)
     finally:
         ruta_temp.unlink(missing_ok=True)

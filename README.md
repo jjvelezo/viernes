@@ -1,15 +1,23 @@
 # Viernes
 
-**Viernes** es un proyecto personal para controlar Windows sin tocar el teclado ni el
-mouse. Tiene dos mitades que comparten filosofía pero corren por separado:
+**Viernes** es una **IA local con *tool calling*** para controlar tu PC con Windows
+sin depender de la nube ni de suscripciones de pago. Se mantiene apretada una tecla,
+se habla, Whisper transcribe y un LLM que corre **en la propia máquina** (Gemma, en
+`agente/`) decide si simplemente responde o si ejecuta una *skill*; después contesta
+en voz alta.
 
-1. **Mouse gestual por cámara** — una webcam + MediaPipe rastrean las manos y gestos
-   simples (dedos extendidos, distancia de pellizco) mueven el cursor real de Windows,
-   arrastran ventanas, redimensionan, hacen scroll y cierran aplicaciones.
-2. **Asistente de voz local** (`agente/`) — se mantiene apretada una tecla, se habla,
-   Whisper transcribe, un LLM que corre **en la PC** (Gemma, sin nube) decide si
-   responde o ejecuta una *skill* (abrir apps, volumen, Spotify, carpetas, ventanas,
-   hora, preguntar a ChatGPT), y contesta en voz alta.
+Las **skills** son las capacidades concretas que Viernes puede invocar:
+
+- **Manos** — la primera que se construyó, y de la que nació el proyecto: una webcam +
+  MediaPipe rastrean las manos y con gestos simples (dedos extendidos, distancia de
+  pellizco) se mueve el cursor real de Windows, se arrastran y redimensionan ventanas,
+  se hace scroll y se cierran aplicaciones. Corre como un proceso aparte (`main.py` +
+  `fase1-4`) y puede usarse sola, pero conceptualmente es una capacidad más de Viernes.
+- **El resto** — abrir apps, volumen maestro, Spotify, carpetas, manejo de ventanas,
+  hora y fecha, preguntar a ChatGPT.
+
+La idea de fondo: que la asistencia sea local y sin suscripciones, y que agregar una
+capacidad nueva sea agregar una skill más al set que la IA ya sabe orquestar.
 
 Todo el código, los comentarios y los mensajes de commit están en español, a propósito.
 
@@ -20,11 +28,11 @@ Todo el código, los comentarios y los mensajes de commit están en español, a 
 ## Tabla de contenido
 
 - [Cómo funciona: la idea de fondo](#cómo-funciona-la-idea-de-fondo)
-- [Parte 1 — Mouse gestual](#parte-1--mouse-gestual)
+- [La skill de manos (mouse gestual)](#la-skill-de-manos-mouse-gestual)
   - [Pipeline](#pipeline)
   - [Gestos y qué hacen](#gestos-y-qué-hacen)
   - [Los archivos `faseN`](#los-archivos-fasen)
-- [Parte 2 — Asistente de voz (`agente/`)](#parte-2--asistente-de-voz-agente)
+- [El agente: la IA con tool calling (`agente/`)](#el-agente-la-ia-con-tool-calling-agente)
   - [Ciclo de un comando](#ciclo-de-un-comando)
   - [El motor LLM local](#el-motor-llm-local)
   - [Skills disponibles](#skills-disponibles)
@@ -37,8 +45,10 @@ Todo el código, los comentarios y los mensajes de commit están en español, a 
 
 ## Cómo funciona: la idea de fondo
 
-Las dos mitades siguen el mismo patrón: **una señal cruda del mundo real → una
-interpretación barata y explícita → una acción sobre Windows vía `pywin32`.**
+El núcleo es la IA: **voz → Whisper → LLM local → ¿responde o llama una skill? →
+acción sobre Windows → respuesta hablada.** La skill de manos sigue el mismo espíritu
+por su cuenta — **una señal cruda del mundo real → una interpretación barata y
+explícita → una acción sobre Windows vía `pywin32`** — pero sin pasar por el LLM.
 
 ```mermaid
 flowchart LR
@@ -65,7 +75,10 @@ primitivas fiables — *distancia entre dos puntos* y *¿está un dedo extendido
 
 ---
 
-## Parte 1 — Mouse gestual
+## La skill de manos (mouse gestual)
+
+Fue lo primero que se construyó y de ahí salió todo el proyecto. Corre como proceso
+independiente (no lo importa nada del agente), así que no puede romper el resto.
 
 ### Pipeline
 
@@ -145,9 +158,9 @@ independiente y nunca toca `main.py` ni `fase1-4`.
 
 ---
 
-## Parte 2 — Asistente de voz (`agente/`)
+## El agente: la IA con tool calling (`agente/`)
 
-Sub-proyecto **deliberadamente aislado**: no importa nada de `fase1-4` / `main.py` /
+El corazón de Viernes. Sub-proyecto **deliberadamente aislado**: no importa nada de `fase1-4` / `main.py` /
 `fase6-10`, para poder moverlo a su propio repo sin arrastrar el mouse gestual. Lo
 que necesitaba de esos archivos se **reescribió** (portado, no importado).
 
@@ -227,7 +240,8 @@ ignora F9) → **hablando** (reproduciendo respuesta, F9 hace barge-in).
 | **tiempo** | Hora y fecha actual | `datetime.now()`, formateado en español |
 | **carpetas** | Abrir Escritorio/Documentos/Descargas y proyectos | Match por contención + fuzzy sobre `Documents/Proyectos/` |
 | **ventanas** | Cerrar / minimizar ventanas | `win32gui.EnumWindows` + búsqueda por título. Si hay ambigüedad, no cierra nada: pide aclarar |
-| **spotify** | Reproducir canción/playlist/mood, siguiente/anterior, pausa | Web API de Spotify con `urllib` (sin librería). Requiere Premium + correr `scripts/spotify_auth.py` una vez |
+| **spotify** | Reproducir canción/playlist/mood, siguiente/anterior, pausa | Web API de Spotify con `urllib` (sin librería). Requiere Premium + correr `scripts/spotify_auth.py` una vez. Playlists arrancan en aleatorio; el play apunta al `device_id` explícito para no quedar mudo |
+| **manos_libres** | Activar / desactivar el control por gestos de la mano | Lanza `main.py` (mouse gestual) como **proceso aparte** vía `subprocess` — no importa nada de `fase1-4`, así que no puede tumbar al agente. `atexit` lo cierra al salir |
 
 ---
 
@@ -290,8 +304,8 @@ cp agente/.env.example        agente/.env           # solo si vas a usar Spotify
 
 - **`agente/config.json`** — ajustes **no secretos** propios de esta máquina: ruta
   al `.litertlm`, backend (`gpu`/`cpu`), modelo de Whisper, voz de TTS, tecla de
-  push-to-talk, carpeta de proyectos. Se ignora en git; `config.example.json` es la
-  plantilla que sí se sube.
+  push-to-talk, carpeta de proyectos, saludo de arranque (`saludo.frases` / `saludo.usar_llm`).
+  Se ignora en git; `config.example.json` es la plantilla que sí se sube.
 - **`agente/.env`** — **solo credenciales** (`SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`).
   Se ignora en git; `.env.example` es la plantilla.
 

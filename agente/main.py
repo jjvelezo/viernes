@@ -8,6 +8,7 @@ Proyecto separado de Viernes por diseno: no importa nada de
 fase1-4/main.py/fase6-10 de la carpeta padre, para poder moverse a su
 propia carpeta/repo con git mv sin arrastrar el mouse gestual."""
 
+import random
 import sys
 import threading
 import time
@@ -84,6 +85,38 @@ def _procesar(audio, modelo):
         hablar(respuesta)
 
 
+def _franja_horaria():
+    hora = time.localtime().tm_hour
+    if hora < 12:
+        return "Buenos días"
+    if hora < 20:
+        return "Buenas tardes"
+    return "Buenas noches"
+
+
+def _saludar():
+    """Saludo hablado al arrancar (estilo Jarvis, no un pitido generico).
+    Por defecto: franja horaria + una frase al azar de config.json. Con
+    saludo.usar_llm=true lo genera el modelo (mas natural, +2s al arranque)."""
+    _estado_turno["valor"] = ESTADO_HABLANDO
+    try:
+        if config.obtener("saludo.usar_llm", False):
+            try:
+                texto, _ = motor_llm.ejecutar_turno(
+                    "Saludá al usuario en una sola frase corta para arrancar la jornada.",
+                    skills.TOOLS,
+                )
+                if texto:
+                    hablar(texto)
+                    return
+            except Exception:
+                LOG.exception("Fallo el saludo por LLM, uso uno fijo")
+        frases = config.obtener("saludo.frases") or ["A sus órdenes."]
+        hablar(f"{_franja_horaria()}, señor. {random.choice(frases)}")
+    finally:
+        _estado_turno["valor"] = ESTADO_IDLE
+
+
 def setup(icon):
     icon.visible = True
     LOG.info('=== Agente base -- mantene "%s" para hablar ===', TECLA_PTT.upper())
@@ -96,6 +129,8 @@ def setup(icon):
     global _STREAM_AUDIO
     estado = EstadoGrabacion()
     _STREAM_AUDIO = iniciar_stream(estado)
+
+    _saludar()
 
     tecla_abajo = {"activa": False}
 

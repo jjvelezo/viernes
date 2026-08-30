@@ -22,6 +22,7 @@ activar un dispositivo, y la reproduccion va a seguir fallando)."""
 
 import base64
 import json
+import random
 import time
 import urllib.error
 import urllib.parse
@@ -145,6 +146,36 @@ def _asegurar_dispositivo_activo(token, uri_contenido):
     time.sleep(ESPERA_DISPOSITIVO_S)
 
 
+def _device_id(token):
+    """device_id que Spotify ve ahora mismo: el activo si hay uno, si no
+    el primero de la lista. None si no hay ninguno. Apuntar el play a este
+    id explicitamente evita el caso "orden aceptada pero muda" cuando el
+    navegador tardo mas que ESPERA_DISPOSITIVO_S en registrarse."""
+    datos = _api("GET", "/me/player/devices", token)
+    dispositivos = datos.get("devices", []) if datos else []
+    if not dispositivos:
+        return None
+    activo = next((d for d in dispositivos if d.get("is_active")), None)
+    return (activo or dispositivos[0])["id"]
+
+
+def _reproducir_contexto(token, context_uri, total_tracks=None):
+    """Reproduce una playlist/album (context_uri) en modo aleatorio,
+    arrancando en una pista al azar. `total_tracks` (si se sabe) permite
+    elegir el punto de arranque; sin el, solo se activa el shuffle y
+    Spotify sigue en aleatorio a partir de la primera."""
+    device_id = _device_id(token)
+    params = {"device_id": device_id} if device_id else None
+
+    _api("PUT", "/me/player/shuffle", token,
+         parametros={**(params or {}), "state": "true"})
+
+    cuerpo = {"context_uri": context_uri}
+    if total_tracks and total_tracks > 1:
+        cuerpo["offset"] = {"position": random.randint(0, min(total_tracks, 500) - 1)}
+    _api("PUT", "/me/player/play", token, cuerpo=cuerpo, parametros=params)
+
+
 def _buscar(token, consulta, tipo, limite=5):
     resultado = _api("GET", "/search", token, parametros={"q": consulta, "type": tipo, "limit": limite})
     if not resultado:
@@ -174,7 +205,10 @@ def reproducir_cancion(nombre: str) -> str:
         raise ValueError(f'No encontre ninguna cancion parecida a "{nombre}" en Spotify.')
     cancion = resultados[0]
     _asegurar_dispositivo_activo(token, cancion["uri"])
-    _api("PUT", "/me/player/play", token, cuerpo={"uris": [cancion["uri"]]})
+    device_id = _device_id(token)
+    params = {"device_id": device_id} if device_id else None
+    _api("PUT", "/me/player/shuffle", token, parametros={**(params or {}), "state": "false"})
+    _api("PUT", "/me/player/play", token, cuerpo={"uris": [cancion["uri"]]}, parametros=params)
     artistas = ", ".join(a["name"] for a in cancion.get("artists", []))
     return f'Reproduciendo "{cancion["name"]}"' + (f" de {artistas}." if artistas else ".")
 
@@ -199,8 +233,8 @@ def reproducir_playlist(nombre: str) -> str:
         raise ValueError(f'No encontre ninguna playlist tuya parecida a "{nombre}".')
 
     _asegurar_dispositivo_activo(token, coincidencia["uri"])
-    _api("PUT", "/me/player/play", token, cuerpo={"context_uri": coincidencia["uri"]})
-    return f'Reproduciendo tu playlist "{coincidencia["name"]}".'
+    _reproducir_contexto(token, coincidencia["uri"], (coincidencia.get("tracks") or {}).get("total"))
+    return f'Reproduciendo tu playlist "{coincidencia["name"]}" en aleatorio.'
 
 
 def reproducir_por_mood(mood: str) -> str:
@@ -218,7 +252,7 @@ def reproducir_por_mood(mood: str) -> str:
         raise ValueError(f'No encontre ninguna playlist para "{mood}".')
     playlist = resultados[0]
     _asegurar_dispositivo_activo(token, playlist["uri"])
-    _api("PUT", "/me/player/play", token, cuerpo={"context_uri": playlist["uri"]})
+    _reproducir_contexto(token, playlist["uri"], (playlist.get("tracks") or {}).get("total"))
     return f'Reproduciendo "{playlist["name"]}".'
 
 

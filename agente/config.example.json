@@ -15,5 +15,14 @@
   },
   "carpetas": {
     "proyectos": "~/Documents/Proyectos"
+  },
+  "saludo": {
+    "usar_llm": false,
+    "frases": [
+      "A sus órdenes.",
+      "¿En qué puedo ayudarle?",
+      "Listo para trabajar, señor.",
+      "Aquí estoy cuando me necesite."
+    ]
   }
 }
