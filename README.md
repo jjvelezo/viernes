@@ -279,12 +279,31 @@ Usar siempre el Python del venv del proyecto, no uno del sistema.
 ```
 
 **Asistente de voz (nuevo, con LLM):**
+
+Antes de la primera corrida hay que crear la config local (nada de esto se sube
+a git):
+
+```
+cp agente/config.example.json agente/config.json   # y editar model_path, etc.
+cp agente/.env.example        agente/.env           # solo si vas a usar Spotify
+```
+
+- **`agente/config.json`** — ajustes **no secretos** propios de esta máquina: ruta
+  al `.litertlm`, backend (`gpu`/`cpu`), modelo de Whisper, voz de TTS, tecla de
+  push-to-talk, carpeta de proyectos. Se ignora en git; `config.example.json` es la
+  plantilla que sí se sube.
+- **`agente/.env`** — **solo credenciales** (`SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`).
+  Se ignora en git; `.env.example` es la plantilla.
+
 ```
 ./venv/Scripts/python.exe agente/main.py
 ```
 Mantener **F9** apretada para hablar; el ícono de la bandeja muestra el estado
 (gris = esperando, azul = grabando, naranja = procesando). Salir por el menú del
 ícono ("Salir").
+
+Para la skill de Spotify, además: `./venv/Scripts/python.exe agente/scripts/spotify_auth.py`
+una vez (autoriza en el navegador y cachea el token en `agente/.spotify_token_cache`, gitignored).
 
 **Fases sueltas (checkpoints):**
 ```

@@ -1,0 +1,19 @@
+{
+  "llm": {
+    "model_path": "C:/ruta/a/tu/modelo/gemma-4-E2B-it.litertlm",
+    "backend": "gpu"
+  },
+  "stt": {
+    "model": "small"
+  },
+  "tts": {
+    "voice": "es-MX-DaliaNeural",
+    "rate": "+15%"
+  },
+  "push_to_talk": {
+    "key": "f9"
+  },
+  "carpetas": {
+    "proyectos": "~/Documents/Proyectos"
+  }
+}

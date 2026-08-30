@@ -16,11 +16,12 @@ import keyboard
 import pystray
 from PIL import Image, ImageDraw
 
+import config
 import skills
 from core import logs, motor_llm
 from core.voz import EstadoGrabacion, cargar_modelo_stt, detener_reproduccion, hablar, iniciar_stream, transcribir
 
-TECLA_PTT = "f9"
+TECLA_PTT = config.obtener("push_to_talk.key", "f9")
 
 LOG = logs.configurar()
 

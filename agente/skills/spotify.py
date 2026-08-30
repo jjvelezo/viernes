@@ -29,24 +29,12 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
+import config
+
 RAIZ = Path(__file__).resolve().parent.parent
-ENV_PATH = RAIZ / ".env"
 CACHE_PATH = RAIZ / ".spotify_token_cache"
 
 ESPERA_DISPOSITIVO_S = 6  # mismo valor que ya funcionaba en jarvis_template (spotify_api_initial_delay_seconds)
-
-
-def _cargar_env():
-    variables = {}
-    if not ENV_PATH.exists():
-        return variables
-    with open(ENV_PATH, encoding="utf-8") as archivo:
-        for linea in archivo:
-            linea = linea.strip()
-            if linea and not linea.startswith("#") and "=" in linea:
-                clave, valor = linea.split("=", 1)
-                variables[clave.strip()] = valor.strip()
-    return variables
 
 
 def _leer_cache():
@@ -87,9 +75,8 @@ def _refrescar_token(cache, client_id, client_secret):
 
 
 def _obtener_token():
-    env = _cargar_env()
-    client_id = env.get("SPOTIFY_CLIENT_ID")
-    client_secret = env.get("SPOTIFY_CLIENT_SECRET")
+    client_id = config.secreto("SPOTIFY_CLIENT_ID")
+    client_secret = config.secreto("SPOTIFY_CLIENT_SECRET")
     if not client_id or not client_secret:
         raise ValueError("Falta configurar SPOTIFY_CLIENT_ID/SPOTIFY_CLIENT_SECRET en agente/.env")
 

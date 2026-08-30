@@ -13,6 +13,7 @@ use despues sin pedir login de nuevo."""
 import base64
 import http.server
 import json
+import sys
 import threading
 import time
 import urllib.parse
@@ -21,7 +22,9 @@ import webbrowser
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
-ENV_PATH = RAIZ / ".env"
+sys.path.insert(0, str(RAIZ))  # para importar config.py de agente/
+import config  # noqa: E402
+
 CACHE_PATH = RAIZ / ".spotify_token_cache"
 REDIRECT_URI = "http://127.0.0.1:8888/callback"
 
@@ -30,17 +33,6 @@ REDIRECT_URI = "http://127.0.0.1:8888/callback"
 SCOPES = "user-modify-playback-state user-read-playback-state playlist-read-private"
 
 _codigo_auth = None
-
-
-def _cargar_env():
-    variables = {}
-    with open(ENV_PATH, encoding="utf-8") as archivo:
-        for linea in archivo:
-            linea = linea.strip()
-            if linea and not linea.startswith("#") and "=" in linea:
-                clave, valor = linea.split("=", 1)
-                variables[clave.strip()] = valor.strip()
-    return variables
 
 
 class _ManejadorCallback(http.server.BaseHTTPRequestHandler):
@@ -99,9 +91,10 @@ def _intercambiar_codigo(codigo, client_id, client_secret):
 
 
 def main():
-    env = _cargar_env()
-    client_id = env["SPOTIFY_CLIENT_ID"]
-    client_secret = env["SPOTIFY_CLIENT_SECRET"]
+    client_id = config.secreto("SPOTIFY_CLIENT_ID")
+    client_secret = config.secreto("SPOTIFY_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        raise SystemExit("Falta SPOTIFY_CLIENT_ID/SPOTIFY_CLIENT_SECRET en agente/.env (copia .env.example).")
 
     servidor = http.server.HTTPServer(("127.0.0.1", 8888), _ManejadorCallback)
     threading.Thread(target=servidor.serve_forever, daemon=True).start()

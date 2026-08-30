@@ -6,7 +6,10 @@ import difflib
 import os
 from pathlib import Path
 
-CARPETA_PROYECTOS = Path.home() / "Documents" / "Proyectos"
+import config
+
+# Carpeta donde viven los proyectos del usuario (configurable en config.json).
+CARPETA_PROYECTOS = Path(config.obtener("carpetas.proyectos") or Path.home() / "Documents" / "Proyectos")
 
 CARPETAS_CONOCIDAS = {
     "escritorio": Path.home() / "Desktop",

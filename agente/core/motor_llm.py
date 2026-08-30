@@ -10,11 +10,15 @@ app), cae al texto que devolvio la tool misma en vez de quedarse mudo."""
 
 from litert_lm import Backend, Engine, interfaces
 
-MODEL_PATH = (
-    r"C:\Users\usuario\Documents\Proyectos\viernes\privado\modelos_hf"
-    r"\models--litert-community--gemma-4-E2B-it-litert-lm\snapshots"
-    r"\6b78abd019e61a1ca4cbe3b212d2c9ce8ff38a94\gemma-4-E2B-it.litertlm"
-)
+import config
+
+# Ruta al .litertlm y backend salen de config.json (ver config.example.json).
+MODEL_PATH = config.obtener("llm.model_path")
+_BACKEND = config.obtener("llm.backend", "gpu")
+
+
+def _backend():
+    return Backend.CPU() if str(_BACKEND).lower() == "cpu" else Backend.GPU()
 
 SYSTEM_MESSAGE = (
     "Sos Viernes, un asistente de voz en espanol que corre en la PC del "
@@ -62,7 +66,7 @@ def cargar():
     sola, pero entonces el primer comando paga el costo de carga)."""
     global _engine
     if _engine is None:
-        _engine = Engine(MODEL_PATH, backend=Backend.GPU())
+        _engine = Engine(MODEL_PATH, backend=_backend())
     return _engine
 
 

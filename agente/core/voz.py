@@ -17,8 +17,10 @@ import numpy as np
 import sounddevice as sd
 from faster_whisper import WhisperModel
 
+import config
+
 MUESTREO_HZ = 16000
-MODELO_STT = "small"
+MODELO_STT = config.obtener("stt.model", "small")
 
 # Whisper mezcla espanol con nombres de marcas/apps en ingles bastante mal
 # ("chrome" -> "chorme", etc). initial_prompt le da a Whisper una lista de
@@ -31,8 +33,8 @@ PROMPT_INICIAL = (
     "Outlook, Teams, Visual Studio Code, ChatGPT."
 )
 
-VOZ_TTS = "es-MX-DaliaNeural"  # ver fase6_asistente.py para el historial de voces probadas
-RATE_TTS = "+15%"
+VOZ_TTS = config.obtener("tts.voice", "es-MX-DaliaNeural")  # historial de voces: ver fase6_asistente.py
+RATE_TTS = config.obtener("tts.rate", "+15%")
 
 
 class EstadoGrabacion:

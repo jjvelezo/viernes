@@ -16,9 +16,15 @@ ENV/
 # --- Variables de entorno / secretos ---
 .env
 .env.*
+!.env.example
 *.pem
 *.key
 .spotify_token_cache
+
+# --- Config local de la maquina (no secreta, pero especifica de cada PC) ---
+# Se sube solo el ejemplo; el config.json real (rutas absolutas, etc.) no.
+config.json
+!config.example.json
 
 # --- Notas y archivos locales, no se suben ---
 privado/
