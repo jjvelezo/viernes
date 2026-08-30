@@ -19,6 +19,14 @@
   "spotify": {
     "mover_a_pantalla_secundaria": true
   },
+  "palmada": {
+    "sample_rate": 44100,
+    "block_size": 1024,
+    "threshold": 0.07,
+    "min_gap_seconds": 0.15,
+    "max_gap_seconds": 0.8,
+    "window_minutes": 5
+  },
   "saludo": {
     "usar_llm": false,
     "frases": [

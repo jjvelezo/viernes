@@ -319,6 +319,11 @@ Mantener **F9** apretada para hablar; el ícono de la bandeja muestra el estado
 Para la skill de Spotify, además: `./venv/Scripts/python.exe agente/scripts/spotify_auth.py`
 una vez (autoriza en el navegador y cachea el token en `agente/.spotify_token_cache`, gitignored).
 
+**Abrir Viernes con doble palmada** (opcional): `./venv/Scripts/python.exe agente/scripts/abrir_por_palmada.py`
+escucha el micro y al detectar dos palmadas seguidas lanza el agente y se cierra. Pensado
+para ponerlo al inicio de sesión de Windows (solo escucha los primeros `palmada.window_minutes`);
+`--force` para escuchar sin límite, `--debug` para calibrar `palmada.threshold`.
+
 **Fases sueltas (checkpoints):**
 ```
 ./venv/Scripts/python.exe fase1_camara.py       # cámara + FPS

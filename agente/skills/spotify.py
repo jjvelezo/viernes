@@ -115,7 +115,15 @@ def _api(metodo, endpoint, token, cuerpo=None, parametros=None):
     try:
         with urllib.request.urlopen(peticion) as respuesta:
             crudo = respuesta.read()
-            return json.loads(crudo) if crudo else None
+            if not crudo or not crudo.strip():
+                return None  # 204 No Content (lo normal en play/pause/shuffle/next)
+            try:
+                return json.loads(crudo)
+            except json.JSONDecodeError:
+                # Algunas respuestas OK de Spotify traen un cuerpo que no es
+                # JSON (o un 200 con cuerpo vacio raro) -- no es un error,
+                # simplemente no hay nada que devolver.
+                return None
     except urllib.error.HTTPError as error:
         if error.code == 403:
             raise ValueError("Spotify rechazo la accion -- revisa que la cuenta tenga Premium.") from error
