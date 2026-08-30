@@ -319,11 +319,13 @@ Mantener **F9** apretada para hablar; el ícono de la bandeja muestra el estado
 Para la skill de Spotify, además: `./venv/Scripts/python.exe agente/scripts/spotify_auth.py`
 una vez (autoriza en el navegador y cachea el token en `agente/.spotify_token_cache`, gitignored).
 
-**Abrir Viernes con tecla + doble palmada** (opcional): `./venv/Scripts/python.exe agente/scripts/abrir_por_palmada.py`
-deja un proceso liviano con ícono en la bandeja. En reposo **no** escucha el micro; al
-apretar `palmada.tecla` (mapeable a una tecla física con G-Helper) abre el micro por
-`palmada.escucha_segundos`, y una doble palmada lanza el agente. Pensado para el inicio de
-sesión de Windows. `--debug` imprime el RMS para calibrar `palmada.threshold`.
+**Abrir Viernes con doble palmada** (opcional): se lanza con un atajo de teclado — creá un
+acceso directo a `venv\Scripts\pythonw.exe agente\scripts\abrir_por_palmada.py`, en sus
+Propiedades asignale una "Tecla de método abreviado" (ej. `Ctrl+Alt+J`), o mapeá una tecla
+en G-Helper a ese mismo atajo. El script abre el micro, y con dos palmadas seguidas lanza
+el agente y se cierra; si no hay palmada en `palmada.escucha_segundos`, se cierra solo.
+Nada queda escuchando en reposo. Los parámetros de `palmada` en `config.json` son los de
+`jarvis_template` (ya calibrados).
 
 **Fases sueltas (checkpoints):**
 ```
