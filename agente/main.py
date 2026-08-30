@@ -112,7 +112,7 @@ def _saludar():
             except Exception:
                 LOG.exception("Fallo el saludo por LLM, uso uno fijo")
         frases = config.obtener("saludo.frases") or ["A sus órdenes."]
-        hablar(f"{_franja_horaria()}, señor. {random.choice(frases)}")
+        hablar(f"{_franja_horaria()} señor. {random.choice(frases)}")
     finally:
         _estado_turno["valor"] = ESTADO_IDLE
 

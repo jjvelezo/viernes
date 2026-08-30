@@ -21,14 +21,20 @@ defecto (si no lo esta, va a mostrar la pantalla de login en vez de
 activar un dispositivo, y la reproduccion va a seguir fallando)."""
 
 import base64
+import difflib
 import json
 import random
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
 from pathlib import Path
+
+import win32api
+import win32con
+import win32gui
 
 import config
 
@@ -143,20 +149,94 @@ def _asegurar_dispositivo_activo(token, uri_contenido):
     (open.spotify.com/track/<id>) antes de llamar a la API, nunca la
     home -- por eso se replica exacto eso aca."""
     webbrowser.open(_uri_a_url_web(uri_contenido))
+    if config.obtener("spotify.mover_a_pantalla_secundaria", True):
+        rect = _pantalla_secundaria()
+        if rect:
+            # En un hilo aparte: mover la ventana puede tardar unos
+            # segundos (el navegador todavia esta abriendo) y no queremos
+            # sumar esa espera a la que ya hacemos abajo.
+            threading.Thread(target=_mover_ventana_a, args=(rect, "spotify"), daemon=True).start()
     time.sleep(ESPERA_DISPOSITIVO_S)
 
 
-def _device_id(token):
-    """device_id que Spotify ve ahora mismo: el activo si hay uno, si no
-    el primero de la lista. None si no hay ninguno. Apuntar el play a este
-    id explicitamente evita el caso "orden aceptada pero muda" cuando el
-    navegador tardo mas que ESPERA_DISPOSITIVO_S en registrarse."""
-    datos = _api("GET", "/me/player/devices", token)
-    dispositivos = datos.get("devices", []) if datos else []
-    if not dispositivos:
+def _pantalla_secundaria():
+    """(x, y, ancho, alto) del area de trabajo de un monitor que no sea el
+    primario, o None si hay una sola pantalla."""
+    monitores = win32api.EnumDisplayMonitors()
+    if len(monitores) < 2:
         return None
-    activo = next((d for d in dispositivos if d.get("is_active")), None)
-    return (activo or dispositivos[0])["id"]
+    for handle, _hdc, _rect in monitores:
+        info = win32api.GetMonitorInfo(handle)
+        if info.get("Flags", 0) & win32con.MONITORINFOF_PRIMARY:
+            continue
+        izq, arriba, der, abajo = info["Work"]
+        return (izq, arriba, der - izq, abajo - arriba)
+    return None
+
+
+def _mover_ventana_a(rect, titulo_contiene, intentos=16, espera=0.5):
+    """Espera a que aparezca una ventana visible cuyo titulo contenga
+    `titulo_contiene` y la mueve/maximiza en `rect`. Para mandar el
+    reproductor web de Spotify al monitor secundario cuando hay dos."""
+    x, y, ancho, alto = rect
+    clave = titulo_contiene.lower()
+    for _ in range(intentos):
+        encontradas = []
+
+        def _cb(hwnd, _extra):
+            if win32gui.IsWindowVisible(hwnd) and clave in win32gui.GetWindowText(hwnd).lower():
+                encontradas.append(hwnd)
+            return True
+
+        win32gui.EnumWindows(_cb, None)
+        if encontradas:
+            hwnd = encontradas[0]
+            try:
+                win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+                win32gui.SetWindowPos(
+                    hwnd, None, x, y, ancho, alto,
+                    win32con.SWP_NOZORDER | win32con.SWP_NOACTIVATE,
+                )
+                win32gui.ShowWindow(hwnd, win32con.SW_MAXIMIZE)
+            except Exception:
+                pass  # la ventana pudo cerrarse justo ahora
+            return True
+        time.sleep(espera)
+    return False
+
+
+def _esperar_device_id(token, intentos=10, espera=1.5):
+    """Sondea la lista de dispositivos hasta que aparezca uno. El
+    reproductor web recien abierto suele tardar bastante mas que
+    ESPERA_DISPOSITIVO_S en registrarse, y sin device_id el play se acepta
+    pero queda mudo. Devuelve el id (el activo si hay, si no el primero) o
+    None si nunca aparecio ninguno."""
+    for _ in range(intentos):
+        datos = _api("GET", "/me/player/devices", token)
+        dispositivos = datos.get("devices", []) if datos else []
+        if dispositivos:
+            activo = next((d for d in dispositivos if d.get("is_active")), None)
+            return (activo or dispositivos[0])["id"]
+        time.sleep(espera)
+    return None
+
+
+def _device_id_o_error(token):
+    """device_id listo para reproducir, o un ValueError con un mensaje que
+    el agente puede decir en voz alta (en vez de afirmar en falso que puso
+    la musica)."""
+    device_id = _esperar_device_id(token)
+    if device_id is None:
+        raise ValueError(
+            "Abrí Spotify en el navegador pero no logré tomar el control del "
+            "reproductor. Dale play una vez y volvé a pedírmelo."
+        )
+    # Transferir la reproduccion a ese dispositivo de forma explicita --
+    # asegura que las ordenes siguientes caigan ahi y no en un dispositivo
+    # viejo que la API todavia reporte como "activo".
+    _api("PUT", "/me/player", token, cuerpo={"device_ids": [device_id], "play": False})
+    time.sleep(1)
+    return device_id
 
 
 def _reproducir_contexto(token, context_uri, total_tracks=None):
@@ -164,11 +244,10 @@ def _reproducir_contexto(token, context_uri, total_tracks=None):
     arrancando en una pista al azar. `total_tracks` (si se sabe) permite
     elegir el punto de arranque; sin el, solo se activa el shuffle y
     Spotify sigue en aleatorio a partir de la primera."""
-    device_id = _device_id(token)
-    params = {"device_id": device_id} if device_id else None
+    device_id = _device_id_o_error(token)
+    params = {"device_id": device_id}
 
-    _api("PUT", "/me/player/shuffle", token,
-         parametros={**(params or {}), "state": "true"})
+    _api("PUT", "/me/player/shuffle", token, parametros={**params, "state": "true"})
 
     cuerpo = {"context_uri": context_uri}
     if total_tracks and total_tracks > 1:
@@ -205,30 +284,55 @@ def reproducir_cancion(nombre: str) -> str:
         raise ValueError(f'No encontre ninguna cancion parecida a "{nombre}" en Spotify.')
     cancion = resultados[0]
     _asegurar_dispositivo_activo(token, cancion["uri"])
-    device_id = _device_id(token)
-    params = {"device_id": device_id} if device_id else None
-    _api("PUT", "/me/player/shuffle", token, parametros={**(params or {}), "state": "false"})
+    params = {"device_id": _device_id_o_error(token)}
+    _api("PUT", "/me/player/shuffle", token, parametros={**params, "state": "false"})
     _api("PUT", "/me/player/play", token, cuerpo={"uris": [cancion["uri"]]}, parametros=params)
     artistas = ", ".join(a["name"] for a in cancion.get("artists", []))
     return f'Reproduciendo "{cancion["name"]}"' + (f" de {artistas}." if artistas else ".")
 
 
+def _todas_mis_playlists(token):
+    """Todas las playlists de la biblioteca del usuario (creadas + seguidas),
+    paginando -- no solo las primeras 50. Whisper mete cualquier nombre y la
+    biblioteca real puede pasar de 50, asi que quedarse en la primera pagina
+    hacia que "no la encuentro" playlists que si estaban."""
+    todas, offset = [], 0
+    while True:
+        pagina = _api("GET", "/me/playlists", token, parametros={"limit": 50, "offset": offset})
+        if not pagina:
+            break
+        todas.extend(p for p in pagina.get("items", []) if p)
+        if not pagina.get("next"):
+            break
+        offset += 50
+    return todas
+
+
+def _elegir_playlist(playlists, nombre):
+    """Match tolerante a como suena una transcripcion de voz: exacto ->
+    por contencion (en cualquier direccion) -> el mas parecido por
+    similitud (difflib, cutoff 0.6). Mismo patron que skills/carpetas.py."""
+    clave = nombre.strip().lower()
+    por_nombre = {p["name"].lower(): p for p in playlists if p.get("name")}
+    if clave in por_nombre:
+        return por_nombre[clave]
+    contenidos = [n for n in por_nombre if clave in n or n in clave]
+    if contenidos:
+        return por_nombre[min(contenidos, key=len)]
+    parecidos = difflib.get_close_matches(clave, por_nombre.keys(), n=1, cutoff=0.6)
+    return por_nombre[parecidos[0]] if parecidos else None
+
+
 def reproducir_playlist(nombre: str) -> str:
-    """Busca entre las playlists GUARDADAS del usuario (las suyas, no
-    cualquiera de Spotify) por nombre parecido, y la reproduce.
+    """Busca entre las playlists de la biblioteca del usuario (creadas o
+    seguidas) por nombre parecido, y la reproduce en aleatorio.
 
     Args:
         nombre: nombre de la playlist a buscar, tal como lo dijo el usuario.
     """
     token = _obtener_token()
-    clave = nombre.strip().lower()
 
-    # Solo la primera pagina (hasta 50 playlists) -- alcanza de sobra para
-    # una biblioteca personal, sin la complejidad de paginar de a mas.
-    pagina = _api("GET", "/me/playlists", token, parametros={"limit": 50})
-    propias = pagina.get("items", []) if pagina else []
-
-    coincidencia = next((p for p in propias if p and clave in p["name"].lower()), None)
+    coincidencia = _elegir_playlist(_todas_mis_playlists(token), nombre)
     if coincidencia is None:
         raise ValueError(f'No encontre ninguna playlist tuya parecida a "{nombre}".')
 

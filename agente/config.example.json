@@ -8,13 +8,16 @@
   },
   "tts": {
     "voice": "es-MX-DaliaNeural",
-    "rate": "+15%"
+    "rate": "+25%"
   },
   "push_to_talk": {
     "key": "f9"
   },
   "carpetas": {
     "proyectos": "~/Documents/Proyectos"
+  },
+  "spotify": {
+    "mover_a_pantalla_secundaria": true
   },
   "saludo": {
     "usar_llm": false,
