@@ -20,6 +20,7 @@ de config.json (los de jarvis_template ya vienen bien calibrados).
 import subprocess
 import sys
 import time
+import winsound
 from pathlib import Path
 
 import numpy as np
@@ -41,6 +42,21 @@ BLOCK_SIZE = config.obtener("palmada.block_size", 1024)
 THRESHOLD = config.obtener("palmada.threshold", 0.07)
 MIN_GAP = config.obtener("palmada.min_gap_seconds", 0.15)
 MAX_GAP = config.obtener("palmada.max_gap_seconds", 0.8)
+
+
+def _bip(secuencia):
+    """Feedback audible (no hay ventana ni icono). secuencia: lista de
+    (frecuencia_hz, duracion_ms)."""
+    try:
+        for freq, dur in secuencia:
+            winsound.Beep(freq, dur)
+    except RuntimeError:
+        pass  # algunas placas no soportan Beep, no es critico
+
+
+BIP_ESCUCHANDO = [(880, 120), (1320, 120)]        # sube: "te escucho"
+BIP_DISPARADO = [(1320, 90), (1760, 90), (2093, 160)]  # sube mas: "listo, abriendo"
+BIP_TIMEOUT = [(440, 250)]                          # grave: "me apago sin nada"
 
 
 def _viernes_ya_corriendo():
@@ -87,11 +103,11 @@ def main():
             print("[palmada] Doble palmada. Abriendo Viernes...")
             ultima_palmada[0] = 0.0
             disparado[0] = True
-            _lanzar_viernes()
         else:
             ultima_palmada[0] = ahora
 
     print(f"[palmada] Escuchando la doble palmada ({ESCUCHA_SEGUNDOS}s).")
+    _bip(BIP_ESCUCHANDO)
     with sd.InputStream(
         samplerate=SAMPLE_RATE, blocksize=BLOCK_SIZE, channels=1,
         dtype="float32", callback=callback,
@@ -99,7 +115,13 @@ def main():
         while time.time() < limite and not disparado[0]:
             time.sleep(0.1)
 
-    print("[palmada] " + ("Viernes lanzado. Salgo." if disparado[0] else "Sin palmada, salgo."))
+    if disparado[0]:
+        _bip(BIP_DISPARADO)
+        _lanzar_viernes()
+        print("[palmada] Viernes lanzado. Salgo.")
+    else:
+        _bip(BIP_TIMEOUT)
+        print("[palmada] Sin palmada, salgo.")
 
 
 if __name__ == "__main__":

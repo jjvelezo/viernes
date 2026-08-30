@@ -322,10 +322,11 @@ una vez (autoriza en el navegador y cachea el token en `agente/.spotify_token_ca
 **Abrir Viernes con doble palmada** (opcional): se lanza con un atajo de teclado — creá un
 acceso directo a `venv\Scripts\pythonw.exe agente\scripts\abrir_por_palmada.py`, en sus
 Propiedades asignale una "Tecla de método abreviado" (ej. `Ctrl+Alt+J`), o mapeá una tecla
-en G-Helper a ese mismo atajo. El script abre el micro, y con dos palmadas seguidas lanza
-el agente y se cierra; si no hay palmada en `palmada.escucha_segundos`, se cierra solo.
-Nada queda escuchando en reposo. Los parámetros de `palmada` en `config.json` son los de
-`jarvis_template` (ya calibrados).
+en G-Helper a ese mismo atajo. Como no tiene ventana ni ícono, avisa con pitidos:
+dos tonos que suben al empezar a escuchar, tres al detectar la doble palmada (lanza el
+agente y se cierra), uno grave si pasan `palmada.escucha_segundos` sin palmada y se cierra
+solo. Nada queda escuchando en reposo. Los parámetros de `palmada` en `config.json` son los
+de `jarvis_template` (ya calibrados).
 
 **Fases sueltas (checkpoints):**
 ```
