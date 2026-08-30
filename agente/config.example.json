@@ -20,12 +20,13 @@
     "mover_a_pantalla_secundaria": true
   },
   "palmada": {
+    "tecla": "ctrl+alt+f12",
+    "escucha_segundos": 120,
     "sample_rate": 44100,
     "block_size": 1024,
     "threshold": 0.07,
     "min_gap_seconds": 0.15,
-    "max_gap_seconds": 0.8,
-    "window_minutes": 5
+    "max_gap_seconds": 0.8
   },
   "saludo": {
     "usar_llm": false,
