@@ -319,14 +319,15 @@ Mantener **F9** apretada para hablar; el ícono de la bandeja muestra el estado
 Para la skill de Spotify, además: `./venv/Scripts/python.exe agente/scripts/spotify_auth.py`
 una vez (autoriza en el navegador y cachea el token en `agente/.spotify_token_cache`, gitignored).
 
-**Abrir Viernes con doble palmada** (opcional): se lanza con un atajo de teclado — creá un
-acceso directo a `venv\Scripts\pythonw.exe agente\scripts\abrir_por_palmada.py`, en sus
-Propiedades asignale una "Tecla de método abreviado" (ej. `Ctrl+Alt+J`), o mapeá una tecla
-en G-Helper a ese mismo atajo. Como no tiene ventana propia, avisa con un cartelito breve
-abajo a la derecha: azul al empezar a escuchar, verde al detectar la doble palmada (lanza
-el agente y se cierra), gris si pasan `palmada.escucha_segundos` sin palmada y se cierra
-solo. Nada queda escuchando en reposo. Los parámetros de `palmada` en `config.json` son los
-de `jarvis_template` (ya calibrados).
+**Abrir Viernes con una combinación de teclas + doble palmada** (opcional):
+`agente/scripts/abrir_por_palmada.py` se deja corriendo (poner un acceso directo al `.vbs`
+en `shell:startup`). En reposo solo engancha el teclado — el micrófono **no** se abre.
+Al apretar `palmada.tecla` (por defecto `Ctrl+Shift+F12`) abre el micro y escucha; con dos
+palmadas seguidas lanza el agente y vuelve a reposo; si pasan `palmada.escucha_segundos` sin
+palmada, cierra el micro solo. Avisa con un cartelito abajo a la derecha (azul / verde /
+gris). Los parámetros de `palmada` en `config.json` son los de `jarvis_template` (ya
+calibrados). Nota: el hook de teclado no llega si la ventana con foco es de administrador
+(UIPI, igual que el F9 de Viernes).
 
 **Fases sueltas (checkpoints):**
 ```
