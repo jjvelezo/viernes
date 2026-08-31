@@ -5,6 +5,7 @@ from .apps import TOOLS as _TOOLS_APPS
 from .carpetas import TOOLS as _TOOLS_CARPETAS
 from .chatgpt import TOOLS as _TOOLS_CHATGPT
 from .manos_libres import TOOLS as _TOOLS_MANOS_LIBRES
+from .rutina import TOOLS as _TOOLS_RUTINA
 from .spotify import TOOLS as _TOOLS_SPOTIFY
 from .tiempo import TOOLS as _TOOLS_TIEMPO
 from .ventanas import TOOLS as _TOOLS_VENTANAS
@@ -19,4 +20,5 @@ TOOLS = (
     + _TOOLS_VENTANAS
     + _TOOLS_SPOTIFY
     + _TOOLS_MANOS_LIBRES
+    + _TOOLS_RUTINA
 )

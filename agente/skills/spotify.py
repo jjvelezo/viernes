@@ -140,6 +140,19 @@ def _uri_a_url_web(uri_spotify):
     return f"https://open.spotify.com/{tipo}/{id_}"
 
 
+def _uri_playlist(texto):
+    """Acepta 'spotify:playlist:ID', un ID pelado o una URL
+    https://open.spotify.com/playlist/ID?... y devuelve 'spotify:playlist:ID'."""
+    texto = texto.strip()
+    if texto.startswith("spotify:playlist:"):
+        return texto
+    if "open.spotify.com/playlist/" in texto:
+        cola = texto.split("/playlist/", 1)[1]
+        id_ = cola.split("?", 1)[0].split("/", 1)[0]
+        return f"spotify:playlist:{id_}"
+    return f"spotify:playlist:{texto}"
+
+
 def _asegurar_dispositivo_activo(token, uri_contenido):
     """Abre la pagina especifica de lo que se va a reproducir (no la home
     de open.spotify.com) y espera un momento, SIEMPRE -- sin condicionarlo
@@ -155,7 +168,16 @@ def _asegurar_dispositivo_activo(token, uri_contenido):
          dispositivo ni despues de 16s de espera.
     jarvis_template siempre abria la pagina especifica del track
     (open.spotify.com/track/<id>) antes de llamar a la API, nunca la
-    home -- por eso se replica exacto eso aca."""
+    home -- por eso se replica exacto eso aca.
+
+    Fast-path: si la API YA reporta algun dispositivo (app de escritorio
+    abierta, o una pestana de antes), no se abre nada ni se espera --
+    _device_id_o_error() despues transfiere la reproduccion a ese
+    dispositivo de forma explicita, asi que el riesgo del "dispositivo
+    viejo mudo" queda cubierto igual y arrancar es mucho mas rapido."""
+    datos = _api("GET", "/me/player/devices", token)
+    if datos and datos.get("devices"):
+        return
     webbrowser.open(_uri_a_url_web(uri_contenido))
     if config.obtener("spotify.mover_a_pantalla_secundaria", True):
         rect = _pantalla_secundaria()
@@ -261,6 +283,26 @@ def _reproducir_contexto(token, context_uri, total_tracks=None):
     if total_tracks and total_tracks > 1:
         cuerpo["offset"] = {"position": random.randint(0, min(total_tracks, 500) - 1)}
     _api("PUT", "/me/player/play", token, cuerpo=cuerpo, parametros=params)
+
+
+def reproducir_playlist_uri(uri_o_url: str) -> str:
+    """Reproduce una playlist por su URI / URL / ID exacto (NO busca por
+    nombre), en aleatorio. Para la rutina de inicio y para cuando el
+    usuario pega un link de Spotify.
+
+    Args:
+        uri_o_url: 'spotify:playlist:...', un ID, o una URL
+            https://open.spotify.com/playlist/...
+    """
+    token = _obtener_token()
+    uri = _uri_playlist(uri_o_url)
+    id_ = uri.split(":")[-1]
+    info = _api("GET", f"/playlists/{id_}", token, parametros={"fields": "name,tracks.total"})
+    total = (info.get("tracks") or {}).get("total") if info else None
+    _asegurar_dispositivo_activo(token, uri)
+    _reproducir_contexto(token, uri, total)
+    nombre = info.get("name") if info else None
+    return f'Reproduciendo "{nombre}" en aleatorio.' if nombre else "Reproduciendo la playlist en aleatorio."
 
 
 def _buscar(token, consulta, tipo, limite=5):
@@ -403,6 +445,7 @@ def reanudar_musica() -> str:
 TOOLS = [
     reproducir_cancion,
     reproducir_playlist,
+    reproducir_playlist_uri,
     reproducir_por_mood,
     siguiente_cancion,
     cancion_anterior,

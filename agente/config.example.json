@@ -19,6 +19,11 @@
   "spotify": {
     "mover_a_pantalla_secundaria": true
   },
+  "rutina": {
+    "al_iniciar": false,
+    "apps": [],
+    "spotify_playlist_uri": ""
+  },
   "palmada": {
     "tecla": "ctrl+shift+f8",
     "escucha_segundos": 120,

@@ -115,8 +115,12 @@ def setup(icon):
     icon.visible = True
     LOG.info('=== Agente base -- mantene "%s" para hablar ===', TECLA_PTT.upper())
 
-    # Saludar ya, mientras cargan los modelos (edge-tts no depende de ellos).
+    # Saludar y abrir la rutina de inicio YA, mientras cargan los modelos
+    # (edge-tts, abrir apps y Spotify no dependen de Whisper/Gemma) -- asi
+    # abrir Viernes no se siente lento.
     threading.Thread(target=_saludar, daemon=True).start()
+    if config.obtener("rutina.al_iniciar", True):
+        threading.Thread(target=skills.rutina.ejecutar_al_inicio, daemon=True).start()
 
     LOG.info("Cargando modelo STT...")
     modelo = cargar_modelo_stt()
