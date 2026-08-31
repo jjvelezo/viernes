@@ -242,6 +242,7 @@ ignora F9) → **hablando** (reproduciendo respuesta, F9 hace barge-in).
 | **ventanas** | Cerrar / minimizar ventanas | `win32gui.EnumWindows` + búsqueda por título. Si hay ambigüedad, no cierra nada: pide aclarar |
 | **spotify** | Reproducir canción/playlist/mood, siguiente/anterior, pausa | Web API de Spotify con `urllib` (sin librería). Requiere Premium + correr `scripts/spotify_auth.py` una vez. Playlists arrancan en aleatorio; el play apunta al `device_id` explícito para no quedar mudo |
 | **manos_libres** | Activar / desactivar el control por gestos de la mano | Lanza `main.py` (mouse gestual) como **proceso aparte** vía `subprocess` — no importa nada de `fase1-4`, así que no puede tumbar al agente. `atexit` lo cierra al salir |
+| **rutina** | "Modo trabajo" / arranque de la jornada | Abre `rutina.apps` de `config.json` y pone `rutina.spotify_playlist_uri` en aleatorio. Con `rutina.al_iniciar: true` corre solo al arrancar el agente, en un hilo, en paralelo con la carga de modelos |
 
 ---
 
@@ -304,7 +305,8 @@ cp agente/.env.example        agente/.env           # solo si vas a usar Spotify
 
 - **`agente/config.json`** — ajustes **no secretos** propios de esta máquina: ruta
   al `.litertlm`, backend (`gpu`/`cpu`), modelo de Whisper, voz de TTS, tecla de
-  push-to-talk, carpeta de proyectos, saludo de arranque (`saludo.frases` / `saludo.usar_llm`).
+  push-to-talk, carpeta de proyectos, saludo de arranque (`saludo.frases`), rutina de inicio
+  (`rutina.apps` / `rutina.spotify_playlist_uri` / `rutina.al_iniciar`).
   Se ignora en git; `config.example.json` es la plantilla que sí se sube.
 - **`agente/.env`** — **solo credenciales** (`SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`).
   Se ignora en git; `.env.example` es la plantilla.
