@@ -20,7 +20,7 @@
     "mover_a_pantalla_secundaria": true
   },
   "palmada": {
-    "tecla": "ctrl+shift+f12",
+    "tecla": "ctrl+shift+f8",
     "escucha_segundos": 120,
     "sample_rate": 44100,
     "block_size": 1024,

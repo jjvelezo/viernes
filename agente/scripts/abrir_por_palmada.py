@@ -4,7 +4,7 @@
 Se deja corriendo (va al inicio de sesion de Windows). En reposo lo unico
 activo es el enganche del teclado: el MICROFONO NO se abre.
 
-  1. Apretas `palmada.tecla` (por defecto Ctrl+Shift+F12) desde cualquier lado.
+  1. Apretas `palmada.tecla` (por defecto Ctrl+Shift+F8) desde cualquier lado.
   2. Se abre el microfono y escucha unos segundos (cartel azul abajo a la
      derecha).
   3. Doble palmada  ->  lanza agente/main.py, cartel verde, y vuelve a
@@ -46,7 +46,7 @@ _VENV = RAIZ_AGENTE.parent / "venv" / "Scripts"
 PYTHON_SIN_CONSOLA = _VENV / "pythonw.exe"
 PYTHON_VENV = _VENV / "python.exe"
 
-TECLA = config.obtener("palmada.tecla", "ctrl+shift+f12")
+TECLA = config.obtener("palmada.tecla", "ctrl+shift+f8")
 ESCUCHA_SEGUNDOS = config.obtener("palmada.escucha_segundos", 120)
 SAMPLE_RATE = config.obtener("palmada.sample_rate", 44100)
 BLOCK_SIZE = config.obtener("palmada.block_size", 1024)

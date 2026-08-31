@@ -322,7 +322,7 @@ una vez (autoriza en el navegador y cachea el token en `agente/.spotify_token_ca
 **Abrir Viernes con una combinación de teclas + doble palmada** (opcional):
 `agente/scripts/abrir_por_palmada.py` se deja corriendo (poner un acceso directo al `.vbs`
 en `shell:startup`). En reposo solo engancha el teclado — el micrófono **no** se abre.
-Al apretar `palmada.tecla` (por defecto `Ctrl+Shift+F12`) abre el micro y escucha; con dos
+Al apretar `palmada.tecla` (por defecto `Ctrl+Shift+F8`) abre el micro y escucha; con dos
 palmadas seguidas lanza el agente y vuelve a reposo; si pasan `palmada.escucha_segundos` sin
 palmada, cierra el micro solo. Avisa con un cartelito abajo a la derecha (azul / verde /
 gris). Los parámetros de `palmada` en `config.json` son los de `jarvis_template` (ya
