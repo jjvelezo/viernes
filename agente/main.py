@@ -95,31 +95,29 @@ def _franja_horaria():
 
 
 def _saludar():
-    """Saludo hablado al arrancar (estilo Jarvis, no un pitido generico).
-    Por defecto: franja horaria + una frase al azar de config.json. Con
-    saludo.usar_llm=true lo genera el modelo (mas natural, +2s al arranque)."""
+    """Saludo hablado al arrancar (estilo Jarvis). Franja horaria + una
+    frase al azar de config.json (saludo.frases). Corre en un hilo aparte
+    apenas aparece el icono, EN PARALELO a la carga de los modelos -- si
+    no, el saludo salia recien despues de cargar Gemma (10-30s en GPU).
+    Por eso no usa el LLM aca."""
     _estado_turno["valor"] = ESTADO_HABLANDO
     try:
-        if config.obtener("saludo.usar_llm", False):
-            try:
-                texto, _ = motor_llm.ejecutar_turno(
-                    "Saludá al usuario en una sola frase corta para arrancar la jornada.",
-                    skills.TOOLS,
-                )
-                if texto:
-                    hablar(texto)
-                    return
-            except Exception:
-                LOG.exception("Fallo el saludo por LLM, uso uno fijo")
         frases = config.obtener("saludo.frases") or ["A sus órdenes."]
         hablar(f"{_franja_horaria()} señor. {random.choice(frases)}")
+    except Exception:
+        LOG.exception("Fallo el saludo")
     finally:
-        _estado_turno["valor"] = ESTADO_IDLE
+        if _estado_turno["valor"] == ESTADO_HABLANDO:
+            _estado_turno["valor"] = ESTADO_IDLE
 
 
 def setup(icon):
     icon.visible = True
     LOG.info('=== Agente base -- mantene "%s" para hablar ===', TECLA_PTT.upper())
+
+    # Saludar ya, mientras cargan los modelos (edge-tts no depende de ellos).
+    threading.Thread(target=_saludar, daemon=True).start()
+
     LOG.info("Cargando modelo STT...")
     modelo = cargar_modelo_stt()
     LOG.info("Cargando modelo LLM (Gemma 4 E2B, GPU)...")
@@ -129,8 +127,6 @@ def setup(icon):
     global _STREAM_AUDIO
     estado = EstadoGrabacion()
     _STREAM_AUDIO = iniciar_stream(estado)
-
-    _saludar()
 
     tecla_abajo = {"activa": False}
 

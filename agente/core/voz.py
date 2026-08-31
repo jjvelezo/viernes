@@ -10,6 +10,7 @@ import asyncio
 import ctypes
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 import edge_tts
@@ -99,11 +100,22 @@ _cancelado = threading.Event()
 def _reproducir_mp3(ruta):
     """Reproduce un mp3 con el driver MCI de Windows -- sin dependencias
     nuevas ademas de edge-tts, que no sabe decodificar/reproducir audio.
-    "play ... wait" bloquea hasta que termine SOLO o hasta que otro hilo
-    llame detener_reproduccion() (barge-in) -- ver main.py."""
+
+    Ojo: NO se usa "play ... wait". Ese bloqueo no se corta de forma
+    confiable cuando otro hilo manda "stop" sobre el mismo alias (MCI se
+    queda pegado). En vez de eso se lanza el play sin esperar y se sondea
+    el estado cada 50ms, saliendo apenas termina o apenas se pide un
+    barge-in (_cancelado) -- asi la voz se calla en ~50ms, no al final."""
     mci = ctypes.windll.winmm.mciSendStringW
     mci(f'open "{ruta}" type mpegvideo alias {ALIAS_MCI}', None, 0, None)
-    mci(f"play {ALIAS_MCI} wait", None, 0, None)
+    mci(f"play {ALIAS_MCI}", None, 0, None)
+    buffer = ctypes.create_unicode_buffer(32)
+    while not _cancelado.is_set():
+        mci(f"status {ALIAS_MCI} mode", buffer, 32, None)
+        if buffer.value != "playing":
+            break
+        time.sleep(0.05)
+    mci(f"stop {ALIAS_MCI}", None, 0, None)
     mci(f"close {ALIAS_MCI}", None, 0, None)
 
 
