@@ -8,8 +8,9 @@ microfono y escucha; con dos palmadas seguidas lanza agente/main.py y se
 cierra. Desde ahi Viernes se usa normal con F9 y se cierra desde su icono
 en la bandeja.
 
-Si en `palmada.escucha_segundos` no hubo palmada (lo apretaste sin
-querer), el script se cierra solo.
+Como no tiene ventana propia ni icono, avisa con un cartelito breve
+abajo a la derecha (ver _Aviso): al empezar a escuchar, al detectar la
+doble palmada, y si se cierra sin palmada tras `palmada.escucha_segundos`.
 
 Deteccion portada de jarvis_template/scripts/clap-trigger.py: RMS por
 bloque de audio, dos picos por encima de `threshold` separados entre
@@ -20,7 +21,7 @@ de config.json (los de jarvis_template ya vienen bien calibrados).
 import subprocess
 import sys
 import time
-import winsound
+import tkinter as tk
 from pathlib import Path
 
 import numpy as np
@@ -44,19 +45,39 @@ MIN_GAP = config.obtener("palmada.min_gap_seconds", 0.15)
 MAX_GAP = config.obtener("palmada.max_gap_seconds", 0.8)
 
 
-def _bip(secuencia):
-    """Feedback audible (no hay ventana ni icono). secuencia: lista de
-    (frecuencia_hz, duracion_ms)."""
-    try:
-        for freq, dur in secuencia:
-            winsound.Beep(freq, dur)
-    except RuntimeError:
-        pass  # algunas placas no soportan Beep, no es critico
+class _Aviso:
+    """Cartelito sin bordes, arriba de todo, abajo a la derecha de la
+    pantalla principal. Se muestra unos ms y se esconde solo."""
+
+    def __init__(self, root):
+        self._root = root
+        root.overrideredirect(True)
+        root.attributes("-topmost", True)
+        root.attributes("-alpha", 0.96)
+        self._label = tk.Label(
+            root, font=("Segoe UI", 12), fg="white", padx=22, pady=12, bg="#1E5FA8"
+        )
+        self._label.pack()
+        root.withdraw()
+
+    def mostrar(self, texto, color, ms=1600):
+        self._label.configure(text=texto, bg=color)
+        self._root.configure(bg=color)
+        self._root.update_idletasks()
+        ancho = self._root.winfo_reqwidth()
+        alto = self._root.winfo_reqheight()
+        pantalla_ancho = self._root.winfo_screenwidth()
+        pantalla_alto = self._root.winfo_screenheight()
+        x = pantalla_ancho - ancho - 28
+        y = pantalla_alto - alto - 70
+        self._root.geometry(f"+{x}+{y}")
+        self._root.deiconify()
+        self._root.after(ms, self._root.withdraw)
 
 
-BIP_ESCUCHANDO = [(880, 120), (1320, 120)]        # sube: "te escucho"
-BIP_DISPARADO = [(1320, 90), (1760, 90), (2093, 160)]  # sube mas: "listo, abriendo"
-BIP_TIMEOUT = [(440, 250)]                          # grave: "me apago sin nada"
+COLOR_ESCUCHANDO = "#1E5FA8"  # azul
+COLOR_LISTO = "#2E7D32"       # verde
+COLOR_NADA = "#555555"        # gris
 
 
 def _viernes_ya_corriendo():
@@ -92,6 +113,8 @@ def main():
     ultima_palmada = [0.0]
 
     def callback(indata, _frames, _time_info, _status):
+        # Corre en el hilo de sounddevice: solo toca variables locales,
+        # nada de Tk (eso lo maneja el poller en el hilo principal).
         ahora = time.time()
         rms = float(np.sqrt(np.mean(indata ** 2)))
         if rms <= THRESHOLD:
@@ -100,28 +123,48 @@ def main():
         if gap < MIN_GAP:
             return  # rebote de la misma palmada
         if ultima_palmada[0] > 0 and gap <= MAX_GAP:
-            print("[palmada] Doble palmada. Abriendo Viernes...")
+            print("[palmada] Doble palmada.")
             ultima_palmada[0] = 0.0
             disparado[0] = True
         else:
             ultima_palmada[0] = ahora
 
-    print(f"[palmada] Escuchando la doble palmada ({ESCUCHA_SEGUNDOS}s).")
-    _bip(BIP_ESCUCHANDO)
-    with sd.InputStream(
+    root = tk.Tk()
+    aviso = _Aviso(root)
+
+    stream = sd.InputStream(
         samplerate=SAMPLE_RATE, blocksize=BLOCK_SIZE, channels=1,
         dtype="float32", callback=callback,
-    ):
-        while time.time() < limite and not disparado[0]:
-            time.sleep(0.1)
+    )
+    stream.start()
+    print(f"[palmada] Escuchando la doble palmada ({ESCUCHA_SEGUNDOS}s).")
+    aviso.mostrar("Escuchando palmadas...", COLOR_ESCUCHANDO)
 
-    if disparado[0]:
-        _bip(BIP_DISPARADO)
-        _lanzar_viernes()
-        print("[palmada] Viernes lanzado. Salgo.")
-    else:
-        _bip(BIP_TIMEOUT)
-        print("[palmada] Sin palmada, salgo.")
+    def poll():
+        if disparado[0]:
+            _cerrar(True)
+        elif time.time() >= limite:
+            _cerrar(False)
+        else:
+            root.after(150, poll)
+
+    def _cerrar(ok):
+        try:
+            stream.stop()
+            stream.close()
+        except Exception:
+            pass
+        if ok:
+            aviso.mostrar("Abriendo Viernes", COLOR_LISTO, ms=1500)
+            _lanzar_viernes()
+            print("[palmada] Viernes lanzado. Salgo.")
+        else:
+            aviso.mostrar("Sin palmada", COLOR_NADA, ms=1200)
+            print("[palmada] Sin palmada, salgo.")
+        root.after(1700 if ok else 1400, root.destroy)
+
+    root.after(150, poll)
+    root.mainloop()
 
 
 if __name__ == "__main__":

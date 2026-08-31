@@ -322,9 +322,9 @@ una vez (autoriza en el navegador y cachea el token en `agente/.spotify_token_ca
 **Abrir Viernes con doble palmada** (opcional): se lanza con un atajo de teclado — creá un
 acceso directo a `venv\Scripts\pythonw.exe agente\scripts\abrir_por_palmada.py`, en sus
 Propiedades asignale una "Tecla de método abreviado" (ej. `Ctrl+Alt+J`), o mapeá una tecla
-en G-Helper a ese mismo atajo. Como no tiene ventana ni ícono, avisa con pitidos:
-dos tonos que suben al empezar a escuchar, tres al detectar la doble palmada (lanza el
-agente y se cierra), uno grave si pasan `palmada.escucha_segundos` sin palmada y se cierra
+en G-Helper a ese mismo atajo. Como no tiene ventana propia, avisa con un cartelito breve
+abajo a la derecha: azul al empezar a escuchar, verde al detectar la doble palmada (lanza
+el agente y se cierra), gris si pasan `palmada.escucha_segundos` sin palmada y se cierra
 solo. Nada queda escuchando en reposo. Los parámetros de `palmada` en `config.json` son los
 de `jarvis_template` (ya calibrados).
 
