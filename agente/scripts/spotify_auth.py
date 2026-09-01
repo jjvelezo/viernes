@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Autorizacion OAuth de Spotify -- correr UNA sola vez (o cuando el
-refresh_token deje de servir). Adaptado del mismo script que uso
-jarvis_template (Documents/Proyectos/jarvis_template/scripts/spotify_auth.py),
-reusando la misma app de Spotify Developer ("Jarvis") -- no hacia falta
-crear una app nueva, el modo Development de Spotify permite reusarla para
-otro proyecto propio sin problema.
+refresh_token deje de servir). Reusa una app de Spotify Developer ya
+registrada (el modo Development de Spotify permite reusar una app entre
+proyectos propios sin crear una nueva); el CLIENT_ID/SECRET salen de
+agente/.env.
 
 Abre el navegador para que el usuario autorice, y guarda el token en
 agente/.spotify_token_cache (gitignored) para que skills/spotify.py lo

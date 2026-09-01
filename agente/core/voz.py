@@ -1,10 +1,9 @@
-"""Primitivas de audio del agente base: grabacion push-to-talk, STT y TTS.
+"""Primitivas de audio del agente: grabacion push-to-talk, STT y TTS.
 
-Portado (no importado) de fase10_asistente_ptt.py y fase6_asistente.py del
-proyecto Viernes -- mismo patron ya validado ahi (sd.InputStream +
-callback, WhisperModel "small" en CPU, edge-tts + MCI para la respuesta
-hablada). Se copia en vez de importarse para que agente/ se pueda mover a
-su propia carpeta o repo despues sin arrastrar el resto de Viernes."""
+Patron ya validado en un prototipo previo (sd.InputStream + callback,
+WhisperModel "small" en CPU, edge-tts + MCI para la respuesta hablada) y
+reescrito aca. Historial de voces de TTS probadas y por que el mp3 se
+reproduce con MCI y no con "play wait": CLAUDE.md."""
 
 import asyncio
 import ctypes
@@ -34,7 +33,7 @@ PROMPT_INICIAL = (
     "Outlook, Teams, Visual Studio Code, ChatGPT."
 )
 
-VOZ_TTS = config.obtener("tts.voice", "es-MX-DaliaNeural")  # historial de voces: ver fase6_asistente.py
+VOZ_TTS = config.obtener("tts.voice", "es-MX-DaliaNeural")  # historial de voces probadas: CLAUDE.md
 RATE_TTS = config.obtener("tts.rate", "+15%")
 
 
@@ -66,7 +65,7 @@ class EstadoGrabacion:
 def iniciar_stream(estado):
     """Arranca el InputStream de sounddevice, corriendo todo el tiempo
     desde el arranque -- el callback solo junta audio mientras
-    estado.grabando este activo (igual que en fase10_asistente_ptt.py)."""
+    estado.grabando este activo."""
     stream = sd.InputStream(
         samplerate=MUESTREO_HZ, channels=1, dtype="float32", callback=estado.callback_audio
     )
@@ -78,13 +77,34 @@ def cargar_modelo_stt():
     return WhisperModel(MODELO_STT, device="cpu", compute_type="int8")
 
 
+UMBRAL_SILENCIO = 0.01  # pico de amplitud por debajo del cual el audio es silencio
+
+
+def _es_eco_del_prompt(texto):
+    """Whisper, sobre silencio/ruido, a veces devuelve como transcripción el
+    propio `initial_prompt` (o un pedazo). Eso NO es un comando."""
+    t = texto.lower().strip().rstrip(".")
+    return len(t) > 8 and t in PROMPT_INICIAL.lower()
+
+
 def transcribir(audio, modelo):
-    """Devuelve el texto transcripto, o "" si el audio es muy corto
-    (toque sin querer) o no se entendio nada."""
+    """Devuelve el texto transcripto, o "" si el audio es muy corto (toque
+    sin querer), silencio, o no se entendio nada."""
     if audio.size < MUESTREO_HZ * 0.3:
         return ""
-    segmentos, _info = modelo.transcribe(audio, language="es", initial_prompt=PROMPT_INICIAL)
-    return " ".join(segmento.text.strip() for segmento in segmentos).strip()
+    if float(np.max(np.abs(audio))) < UMBRAL_SILENCIO:
+        return ""  # no llegó a hablar (apretó y soltó F9 sin decir nada)
+    segmentos, _info = modelo.transcribe(
+        audio,
+        language="es",
+        initial_prompt=PROMPT_INICIAL,
+        vad_filter=True,  # descarta tramos sin voz -> menos alucinaciones
+        condition_on_previous_text=False,
+    )
+    texto = " ".join(segmento.text.strip() for segmento in segmentos).strip()
+    if _es_eco_del_prompt(texto):
+        return ""
+    return texto
 
 
 ALIAS_MCI = "voz_agente"

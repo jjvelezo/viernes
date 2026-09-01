@@ -1,0 +1,40 @@
+# Dependencias directas de Viernes (agente/ + mouse_gestual/).
+# Versiones fijadas a lo que hay instalado y probado en este entorno.
+#
+# Instalar en un venv con Python 3.11:
+#   python -m venv venv
+#   ./venv/Scripts/python.exe -m pip install -r requirements.txt
+#   ./venv/Scripts/python.exe -m playwright install chromium
+#
+# Solo Windows (pywin32, pycaw, MCI). Las transitivas las resuelve pip.
+
+# --- Asistente: voz ---
+sounddevice==0.5.6
+faster-whisper==1.2.1
+edge-tts==7.2.8
+numpy==2.4.6
+
+# --- Asistente: LLM local ---
+litert-lm-api==0.16.1
+
+# --- Asistente: interfaz (bandeja + ventana de chat) ---
+pillow==12.3.0
+pystray==0.19.5
+keyboard==0.13.5
+# Ventana de chat: HTML/CSS en un WebView (core/chat_web.py + core/chat_ui/).
+# pywebview usa el WebView2 que ya trae Windows (Edge); pythonnet es el puente.
+pywebview==6.2.1
+pythonnet==3.1.0
+
+# --- Asistente: skills ---
+pycaw==20251023
+comtypes==1.4.16
+playwright==1.62.0
+psutil==7.2.2
+
+# --- Windows (compartido por skills y mouse gestual) ---
+pywin32==312
+
+# --- Mouse gestual ---
+mediapipe==1.0.1
+opencv-python==5.0.0.93

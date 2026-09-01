@@ -1,11 +1,11 @@
 """Skill: control por gestos con la mano ("manos libres").
 
-Viernes es la IA; el mouse gestual (main.py + fase1-4 en la raiz del repo)
-es una capacidad mas que se enciende y se apaga por voz. Se lanza como un
-proceso APARTE a proposito -- misma regla de aislamiento que el resto de
-agente/: nada de main.py ni de fase* se importa aca, solo se ejecuta con
-el Python del venv. Si el mouse gestual se cuelga o crashea, no se lleva
-puesto al agente.
+Viernes es la IA; el mouse gestual (carpeta mouse_gestual/ en la raiz del
+repo) es una capacidad mas que se enciende y se apaga por voz. Se lanza
+como un proceso APARTE a proposito -- misma regla de aislamiento que el
+resto de agente/: nada de mouse_gestual/ se importa aca, solo se ejecuta
+con el Python del venv. Si el mouse gestual se cuelga o crashea, no se
+lleva puesto al agente.
 
 La ventana de OpenCV del mouse gestual se puede cerrar tambien a mano con
 'q'; desactivar_manos_libres() hace lo mismo matando el proceso."""
@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 RAIZ_VIERNES = Path(__file__).resolve().parent.parent.parent
-_SCRIPT = RAIZ_VIERNES / "main.py"
+_SCRIPT = RAIZ_VIERNES / "mouse_gestual" / "main.py"
 _PYTHON_VENV = RAIZ_VIERNES / "venv" / "Scripts" / "python.exe"
 
 _proceso = None
@@ -36,7 +36,7 @@ def activar_manos_libres() -> str:
     if not _SCRIPT.exists():
         raise ValueError("No encontre main.py del mouse gestual.")
     ejecutable = str(_PYTHON_VENV) if _PYTHON_VENV.exists() else sys.executable
-    _proceso = subprocess.Popen([ejecutable, str(_SCRIPT)], cwd=str(RAIZ_VIERNES))
+    _proceso = subprocess.Popen([ejecutable, str(_SCRIPT)], cwd=str(_SCRIPT.parent))
     return "Listo, control por gestos activado. Mové la mano frente a la cámara."
 
 

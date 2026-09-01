@@ -1,8 +1,12 @@
-"""Fase 5 - Mouse virtual: cualquiera de las dos manos mueve el cursor real
-del sistema. Pellizco corto = click; pellizco sostenido = arrastrar ventana;
-pellizco con AMBAS manos = redimensionar (derecha = esquina superior
-derecha, izquierda = esquina inferior izquierda); puño sostenido mientras
-se arrastra = cerrar la ventana."""
+"""Mouse gestual (punto de entrada): cualquiera de las dos manos mueve el
+cursor real del sistema. Pellizco corto = click; pellizco sostenido =
+arrastrar ventana; pellizco con AMBAS manos = redimensionar (derecha =
+esquina superior derecha, izquierda = esquina inferior izquierda); puño
+sostenido mientras se arrastra = cerrar la ventana.
+
+Máquina de estados por frame que ata las piezas de esta carpeta:
+camara -> landmarks (MediaPipe) -> gestos -> cursor (pywin32). Se lanza
+solo o como proceso aparte desde la skill `manos_libres` del asistente."""
 
 import math
 import sys
@@ -17,9 +21,9 @@ import win32gui
 from mediapipe.tasks.python import vision
 from mediapipe.tasks.python.core.base_options import BaseOptions
 
-from fase2_landmarks import MODEL_PATH, HAND_CONNECTIONS, dibujar_landmarks
-from fase3_gestos import FRAMES_DEBOUNCE, EstadoDebounce, detectar_gesto
-from fase4_cursor import (
+from landmarks import MODEL_PATH, HAND_CONNECTIONS, dibujar_landmarks
+from gestos import FRAMES_DEBOUNCE, EstadoDebounce, detectar_gesto
+from cursor import (
     MANO_CURSOR,
     aplicar_snap_si_corresponde,
     cerrar_ventana,
@@ -614,7 +618,7 @@ def main():
                         1,
                     )
 
-                cv2.imshow("Fase 5 - Mouse virtual", frame)
+                cv2.imshow("Mouse gestual", frame)
 
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break

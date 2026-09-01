@@ -1,31 +1,19 @@
-"""Skill: preguntar a ChatGPT via navegador (Playwright). Adaptado de
-fase6_asistente.py:73-186 -- misma automatizacion (perfil persistente de
-Chromium, boton "Detener la generacion" para saber cuando termino de
-responder, extraccion del transcript). A diferencia de fase9_asistente_voz
-(donde esto era el camino por defecto para "dudas"), aca es una tool mas:
-el LLM local responde directo con su propio conocimiento, y solo llama a
-esta cuando el usuario pide explicitamente buscar en internet / preguntarle
-a ChatGPT, o el pedido necesita informacion que el modelo local no puede
-saber (reciente, actualizada).
+"""Skill: preguntar a ChatGPT via navegador (Playwright).
 
-A diferencia de fase6_asistente.py (que abre y cierra un navegador nuevo
-en cada pregunta), aca el contexto de Chromium se mantiene abierto entre
-preguntas mientras el agente esta corriendo -- cada pregunta solo abre una
-pestana nueva, no un browser nuevo, asi que las preguntas despues de la
-primera son mas rapidas (no repaga el arranque de Chromium). Se cierra
-solo al salir del proceso (atexit) -- nada de esto persiste en disco mas
-alla del perfil de Chromium ya gitignoreado en privado/perfil_chatgpt/.
+Es una tool mas: el LLM local responde directo con su propio conocimiento
+y solo llama a esta cuando el usuario nombra explicitamente ChatGPT/GPT, o
+como fallback de la skill `internet`. Perfil persistente de Chromium en
+privado/perfil_chatgpt/ (gitignored); no necesita login (chatgpt.com
+permite mensajes anonimos de una sola vez). El contexto de Chromium se
+mantiene abierto entre preguntas mientras el agente corre -- cada pregunta
+solo abre una pestana nueva, no un browser nuevo -- y se cierra al salir
+del proceso (atexit).
 
-headless=True NO funciona aca -- probado y confirmado: chatgpt.com esta
-detras de Cloudflare, que detecta el modo headless real de Chromium y
-sirve una pantalla de verificacion ("Just a moment...") en vez del sitio.
-Posicionar la ventana fuera de pantalla (headed pero invisible) TAMPOCO
-funciona -- Chromium parece tratar una ventana fuera de pantalla como "en
-segundo plano" y frena el renderizado en tiempo real que usa chatgpt.com
-para ir mostrando la respuesta, y se cuelga esperandola. Lo que si
-funciona es "--start-minimized": la ventana arranca minimizada (nunca se
-ve ni roba el foco) pero Chromium la sigue tratando como una ventana
-normal para efectos de renderizado, asi que no se cuelga."""
+headless=True NO funciona: Cloudflare detecta el modo headless real de
+Chromium y sirve "Just a moment...". La ventana fuera de pantalla tampoco:
+Chromium la trata como "en segundo plano" y frena el render en tiempo real
+de chatgpt.com. Lo que funciona es "--start-minimized". Detalle completo de
+selectores y trampas de extraccion: CLAUDE.md."""
 
 import atexit
 import re

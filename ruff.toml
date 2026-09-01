@@ -1,0 +1,16 @@
+# Estilo y linting. Correr:  ./venv/Scripts/python.exe -m ruff check .
+#                            ./venv/Scripts/python.exe -m ruff format .
+
+line-length = 120
+target-version = "py311"
+extend-exclude = ["venv", "privado", "prototipos"]
+
+[lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+# E501 (línea larga): varios comentarios explican decisiones a propósito y
+# pasarse de 120 puntualmente es aceptable en este proyecto.
+ignore = ["E501"]
+
+[lint.per-file-ignores]
+# Los scripts sueltos hacen sys.path.insert antes de importar config.
+"agente/scripts/*" = ["E402"]

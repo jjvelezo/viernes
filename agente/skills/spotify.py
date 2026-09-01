@@ -1,156 +1,36 @@
 """Skill: control de Spotify (reproducir canciones/playlists/por mood,
-siguiente/anterior, pausar/reanudar). Adaptado del mismo patron que uso
-jarvis_template (Documents/Proyectos/jarvis_template/scripts/launch.py) --
-llamadas directas a la Web API de Spotify con `urllib`, sin libreria
-externa, reusando la misma app "Jarvis" ya registrada en el Developer
-Dashboard del usuario. Requiere:
-  - Spotify Premium en la cuenta (la API de reproduccion no funciona sin
-    eso, es un requisito de Spotify, no de este codigo).
-  - Haber corrido scripts/spotify_auth.py una vez (guarda el token en
-    .spotify_token_cache, gitignored).
+siguiente/anterior, pausar/reanudar).
 
-La API de reproduccion necesita un "dispositivo activo" (Spotify corriendo
-en algun lado) o falla con 404 -- por eso antes de reproducir se asegura
-de que haya uno, abriendo el reproductor web (open.spotify.com) en el
-navegador por defecto y esperando un momento antes de mandar la orden.
-Igual que jarvis_template: la app de escritorio de Spotify no siempre
-tiene un acceso directo estandar en el Menu Inicio (se probo abrir_app y
-fallo -- "no encontrado"), asi que el navegador es el camino confiable.
-Asume que el usuario ya esta logueado en Spotify en su navegador por
-defecto (si no lo esta, va a mostrar la pantalla de login en vez de
-activar un dispositivo, y la reproduccion va a seguir fallando)."""
+Este modulo tiene la logica de reproduccion (asegurar un dispositivo
+activo, mover el reproductor web al monitor secundario, elegir playlist
+por nombre) y las tools que ve el LLM. El transporte HTTP + OAuth esta en
+skills/_spotify_api.py. Requiere:
+  - Spotify Premium (la API de reproduccion no funciona sin eso, es un
+    requisito de Spotify).
+  - Haber corrido scripts/spotify_auth.py una vez (token en
+    agente/.spotify_token_cache, gitignored).
 
-import base64
+La API de reproduccion necesita un "dispositivo activo" o falla con 404 --
+por eso antes de reproducir se abre la pagina del track/playlist en el
+navegador por defecto (asume que el usuario ya esta logueado en Spotify
+ahi) y se espera un momento. La app de escritorio de Spotify no siempre
+tiene un .lnk estandar en el Menu Inicio, asi que el navegador es el
+camino confiable. Por que tanta gimnasia: CLAUDE.md."""
+
 import difflib
-import json
 import random
 import threading
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
 import webbrowser
-from pathlib import Path
 
 import win32api
 import win32con
 import win32gui
 
 import config
+from ._spotify_api import _api, _buscar, _obtener_token, _uri_a_url_web, _uri_playlist
 
-RAIZ = Path(__file__).resolve().parent.parent
-CACHE_PATH = RAIZ / ".spotify_token_cache"
-
-ESPERA_DISPOSITIVO_S = 6  # mismo valor que ya funcionaba en jarvis_template (spotify_api_initial_delay_seconds)
-
-
-def _leer_cache():
-    if not CACHE_PATH.exists():
-        return {}
-    with open(CACHE_PATH, encoding="utf-8") as archivo:
-        return json.load(archivo)
-
-
-def _guardar_cache(datos):
-    with open(CACHE_PATH, "w", encoding="utf-8") as archivo:
-        json.dump(datos, archivo, indent=2)
-
-
-def _refrescar_token(cache, client_id, client_secret):
-    data = urllib.parse.urlencode({
-        "grant_type": "refresh_token",
-        "refresh_token": cache["refresh_token"],
-    }).encode()
-    credenciales = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
-    peticion = urllib.request.Request(
-        "https://accounts.spotify.com/api/token",
-        data=data,
-        headers={
-            "Authorization": f"Basic {credenciales}",
-            "Content-Type": "application/x-www-form-urlencoded",
-        },
-    )
-    with urllib.request.urlopen(peticion) as respuesta:
-        nuevos_datos = json.loads(respuesta.read())
-
-    cache["access_token"] = nuevos_datos["access_token"]
-    cache["expires_at"] = int(time.time()) + nuevos_datos["expires_in"]
-    if "refresh_token" in nuevos_datos:
-        cache["refresh_token"] = nuevos_datos["refresh_token"]
-    _guardar_cache(cache)
-    return cache
-
-
-def _obtener_token():
-    client_id = config.secreto("SPOTIFY_CLIENT_ID")
-    client_secret = config.secreto("SPOTIFY_CLIENT_SECRET")
-    if not client_id or not client_secret:
-        raise ValueError("Falta configurar SPOTIFY_CLIENT_ID/SPOTIFY_CLIENT_SECRET en agente/.env")
-
-    cache = _leer_cache()
-    if not cache:
-        raise ValueError(
-            "Spotify no esta autorizado todavia -- corre agente/scripts/spotify_auth.py una vez."
-        )
-
-    if time.time() >= cache.get("expires_at", 0) - 60:
-        cache = _refrescar_token(cache, client_id, client_secret)
-
-    return cache["access_token"]
-
-
-def _api(metodo, endpoint, token, cuerpo=None, parametros=None):
-    """Llamada generica a la Web API de Spotify. Devuelve el JSON de
-    respuesta (o None si no hay cuerpo, ej. 204 No Content)."""
-    url = f"https://api.spotify.com/v1{endpoint}"
-    if parametros:
-        url += f"?{urllib.parse.urlencode(parametros)}"
-    data = json.dumps(cuerpo).encode() if cuerpo is not None else None
-    peticion = urllib.request.Request(
-        url,
-        data=data,
-        method=metodo,
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-    )
-    try:
-        with urllib.request.urlopen(peticion) as respuesta:
-            crudo = respuesta.read()
-            if not crudo or not crudo.strip():
-                return None  # 204 No Content (lo normal en play/pause/shuffle/next)
-            try:
-                return json.loads(crudo)
-            except json.JSONDecodeError:
-                # Algunas respuestas OK de Spotify traen un cuerpo que no es
-                # JSON (o un 200 con cuerpo vacio raro) -- no es un error,
-                # simplemente no hay nada que devolver.
-                return None
-    except urllib.error.HTTPError as error:
-        if error.code == 403:
-            raise ValueError("Spotify rechazo la accion -- revisa que la cuenta tenga Premium.") from error
-        if error.code == 404:
-            return None  # sin dispositivo activo, o sin reproduccion en curso -- se maneja en cada funcion
-        raise
-
-
-def _uri_a_url_web(uri_spotify):
-    """spotify:track:XXXX -> https://open.spotify.com/track/XXXX (y lo
-    mismo para playlist/album/etc)."""
-    partes = uri_spotify.split(":")
-    tipo, id_ = partes[1], partes[2]
-    return f"https://open.spotify.com/{tipo}/{id_}"
-
-
-def _uri_playlist(texto):
-    """Acepta 'spotify:playlist:ID', un ID pelado o una URL
-    https://open.spotify.com/playlist/ID?... y devuelve 'spotify:playlist:ID'."""
-    texto = texto.strip()
-    if texto.startswith("spotify:playlist:"):
-        return texto
-    if "open.spotify.com/playlist/" in texto:
-        cola = texto.split("/playlist/", 1)[1]
-        id_ = cola.split("?", 1)[0].split("/", 1)[0]
-        return f"spotify:playlist:{id_}"
-    return f"spotify:playlist:{texto}"
+ESPERA_DISPOSITIVO_S = 6  # segundos de espera tras abrir el reproductor web antes de mandar la orden
 
 
 def _asegurar_dispositivo_activo(token, uri_contenido):
@@ -166,9 +46,8 @@ def _asegurar_dispositivo_activo(token, uri_contenido):
       2) abrir la home generica (open.spotify.com) en vez de la pagina
          especifica del track/playlist -- no llegaba a registrar ningun
          dispositivo ni despues de 16s de espera.
-    jarvis_template siempre abria la pagina especifica del track
-    (open.spotify.com/track/<id>) antes de llamar a la API, nunca la
-    home -- por eso se replica exacto eso aca.
+    Lo que funciona: abrir siempre la pagina especifica del track/playlist
+    (open.spotify.com/track/<id>) antes de llamar a la API, nunca la home.
 
     Fast-path: si la API YA reporta algun dispositivo (app de escritorio
     abierta, o una pestana de antes), no se abre nada ni se espera --
@@ -303,17 +182,6 @@ def reproducir_playlist_uri(uri_o_url: str) -> str:
     _reproducir_contexto(token, uri, total)
     nombre = info.get("name") if info else None
     return f'Reproduciendo "{nombre}" en aleatorio.' if nombre else "Reproduciendo la playlist en aleatorio."
-
-
-def _buscar(token, consulta, tipo, limite=5):
-    resultado = _api("GET", "/search", token, parametros={"q": consulta, "type": tipo, "limit": limite})
-    if not resultado:
-        return []
-    # El campo viene en plural (tracks/playlists) -- y desde la migracion
-    # de la API de feb-2026 pueden aparecer items nulos en resultados de
-    # playlist, se filtran.
-    items = resultado.get(f"{tipo}s", {}).get("items", [])
-    return [item for item in items if item]
 
 
 def reproducir_cancion(nombre: str) -> str:

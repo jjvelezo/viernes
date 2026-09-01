@@ -19,10 +19,9 @@ Nota Windows: si la ventana con foco corre como administrador y este
 proceso no, el hook de teclado puede no recibir la combinacion (UIPI, no
 es un bug de aca) -- pasa lo mismo con el F9 de Viernes.
 
-Deteccion de palmada portada de jarvis_template/scripts/clap-trigger.py:
-RMS por bloque de audio, dos picos sobre `threshold` separados entre
-`min_gap_seconds` y `max_gap_seconds`. Parametros en el bloque "palmada"
-de config.json (los de jarvis_template ya vienen calibrados).
+Deteccion de palmada: RMS por bloque de audio, dos picos sobre `threshold`
+separados entre `min_gap_seconds` y `max_gap_seconds`. Parametros en el
+bloque "palmada" de config.json (ya vienen calibrados en config.example.json).
 """
 
 import queue

@@ -17,6 +17,7 @@ Que hace, desde config.json:
     ("arranca mi jornada") ignora la franja y siempre pone la playlist.
 """
 
+import logging
 import os
 import time
 from pathlib import Path
@@ -24,6 +25,8 @@ from pathlib import Path
 import config
 from . import apps as _apps
 from . import spotify as _spotify
+
+_LOG = logging.getLogger("agente.rutina")
 
 
 def _abrir_apps():
@@ -34,8 +37,9 @@ def _abrir_apps():
                 os.startfile(entrada)
             else:
                 _apps.abrir_app(entrada)
-        except Exception:
-            pass  # una app que no esta no debe frenar el resto de la rutina
+        except Exception as error:
+            # una app que no esta no debe frenar el resto de la rutina
+            _LOG.warning("Rutina: no se pudo abrir %r (%s)", entrada, error)
 
 
 def _en_horario_spotify() -> bool:
@@ -58,8 +62,9 @@ def _poner_playlist(respetar_horario: bool = False):
         return  # fuera de la franja horaria: la rutina sigue sin Spotify
     try:
         _spotify.reproducir_playlist_uri(uri)
-    except Exception:
-        pass  # sin token / Premium / dispositivo: la rutina sigue igual
+    except Exception as error:
+        # sin token / Premium / dispositivo: la rutina sigue igual
+        _LOG.warning("Rutina: no se pudo poner la playlist (%s)", error)
 
 
 def iniciar_jornada() -> str:

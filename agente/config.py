@@ -51,6 +51,10 @@ def obtener(ruta, defecto=None):
 
 
 def _cargar_env():
+    """Parser mínimo de .env: una línea `CLAVE=valor` por credencial, sin
+    comillas ni `export` (no se usa python-dotenv para no sumar dependencia
+    por dos o tres claves). Las líneas en blanco y las que empiezan con `#`
+    se ignoran."""
     global _env
     if _env is None:
         _env = {}

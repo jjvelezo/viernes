@@ -1,4 +1,10 @@
-"""Fase 3 - Detección de gestos de mano (PUÑO, PALMA_ABIERTA, PELLIZCO) con debounce."""
+"""Clasificación de gestos de mano (PUÑO, PALMA_ABIERTA, PELLIZCO) a
+partir de los landmarks, con debounce.
+
+Las funciones de clasificación (`detectar_gesto`, `dedo_extendido`, …) y
+`EstadoDebounce` son lógica pura sin I/O — `main.py` las importa como
+módulo. El `main()` de este archivo es solo una demo standalone del paso
+(cámara + overlay), no lo usa nada más."""
 
 import math
 import os
@@ -186,7 +192,7 @@ def main():
                     2,
                 )
 
-                cv2.imshow("Fase 3 - Gestos", frame)
+                cv2.imshow("Gestos", frame)
 
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break

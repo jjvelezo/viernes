@@ -29,6 +29,11 @@ config.json
 # --- Notas y archivos locales, no se suben ---
 privado/
 
+# --- Prototipos ("fases" de prueba): se conservan en disco como archivo
+#     histórico, pero no van al repo (lo inflan y nada los usa). Ver
+#     docs/decisiones.md para el historial de qué era cada fase. ---
+prototipos/
+
 # --- Editores / configuración local ---
 .vscode/
 .idea/

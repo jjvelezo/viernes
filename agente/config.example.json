@@ -8,7 +8,7 @@
   },
   "tts": {
     "voice": "es-MX-DaliaNeural",
-    "rate": "+25%"
+    "rate": "+15%"
   },
   "push_to_talk": {
     "key": "f9"
@@ -20,8 +20,8 @@
     "mover_a_pantalla_secundaria": true
   },
   "internet": {
-    "pais": "colombia",
-    "contexto_usuario": "El usuario está en Colombia (Bogotá). Moneda local: peso colombiano (COP). Zona horaria: America/Bogota."
+    "pais": "argentina",
+    "contexto_usuario": "El usuario está en Buenos Aires, Argentina. Moneda local: peso argentino (ARS). Zona horaria: America/Argentina/Buenos_Aires."
   },
   "rutina": {
     "al_iniciar": false,
@@ -39,7 +39,6 @@
     "max_gap_seconds": 0.8
   },
   "saludo": {
-    "usar_llm": false,
     "frases": [
       "A sus órdenes.",
       "¿En qué puedo ayudarle?",

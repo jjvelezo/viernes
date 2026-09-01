@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Viernes</title>
+<style>
+  :root{
+    /* Casi negro (sólido): la translucidez la hace la ventana entera
+       (alpha uniforme, ver chat_web.ALPHA_VENTANA), no el CSS. */
+    --bg: #16171c;
+    --panel: rgba(255,255,255,.045);
+    --panel-2: rgba(255,255,255,.085);
+    --borde: rgba(255,255,255,.09);
+    --texto: #f2f3f6;
+    --tenue: #a7acb6;
+    --acento: #4c8dff;
+    --acento-2: #3f7be8;
+    --cian: #57cfe6;
+    --peligro: #f2564b;
+    --verde: #33d17a;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  :root,html,body{ height:100%; background:transparent; overflow:hidden; }
+  body{
+    font-family:-apple-system,"Segoe UI Variable Display","Segoe UI",system-ui,"Helvetica Neue",sans-serif;
+    color:var(--texto);
+    -webkit-font-smoothing:antialiased;
+  }
+
+  .app{
+    height:100%;
+    display:flex;
+    flex-direction:column;
+    background:var(--bg);
+    border-radius:14px;
+    overflow:hidden;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.06);
+  }
+
+  /* ---------- cabecera ---------- */
+  header{
+    position:relative;
+    display:flex; flex-direction:column; justify-content:center;
+    gap:2px;
+    padding:12px 16px;
+    min-height:64px;
+    border-bottom:1px solid var(--borde);
+    background:rgba(255,255,255,.03);
+    user-select:none;
+  }
+  .marca{ display:flex; align-items:center; gap:8px; font-weight:600; font-size:16px; letter-spacing:.2px; }
+  .marca .rayo{ color:var(--cian); font-size:15px; }
+  .estado{ display:flex; align-items:center; gap:7px; font-size:11.5px; color:var(--tenue); }
+  .estado[hidden]{ display:none; }  /* el atributo hidden si no, lo pisa el display:flex de arriba */
+  .dot{ width:7px; height:7px; border-radius:50%; background:var(--tenue); flex:none; }
+  .dot.vivo{ animation:latido 1.4s ease-in-out infinite; }
+  @keyframes latido{ 0%,100%{opacity:1} 50%{opacity:.25} }
+
+  /* fuera del <header> (que es zona de arrastre) para que los botones no
+     disparen el drag */
+  .ctrl{
+    position:absolute; top:10px; right:10px; z-index:5;
+    display:flex; gap:4px; opacity:0; transition:opacity .18s;
+  }
+  .app:hover .ctrl,
+  .ctrl:has(.activo){ opacity:1; }   /* si está fijada, el pin queda visible */
+  .ctrl button{
+    width:24px; height:24px; border:0; border-radius:8px;
+    background:rgba(255,255,255,.06); color:var(--tenue);
+    font-size:13px; cursor:pointer; display:grid; place-items:center;
+    transition:.12s;
+  }
+  .ctrl button:hover{ background:rgba(255,255,255,.14); color:var(--texto); }
+  .ctrl .cerrar:hover{ background:var(--peligro); color:#fff; }
+  .ctrl .pin svg{ width:13px; height:13px; }
+  .ctrl .pin.activo{ background:var(--acento); color:#fff; }
+  .ctrl .pin.activo:hover{ background:var(--acento-2); }
+
+  /* ---------- mensajes ---------- */
+  .msgs{
+    flex:1; overflow-y:auto; overflow-x:hidden;
+    padding:14px 16px 6px;
+    display:flex; flex-direction:column;
+    scroll-behavior:smooth;
+  }
+  .msgs::-webkit-scrollbar{ width:9px; }
+  .msgs::-webkit-scrollbar-thumb{ background:rgba(255,255,255,.13); border-radius:20px; border:3px solid transparent; background-clip:content-box; }
+
+  .row{ display:flex; flex-direction:column; max-width:100%; }
+  .row.user{ align-items:flex-end; }
+  .row.bot{ align-items:flex-start; }
+  .row + .row{ margin-top:3px; }
+  .row.nuevo{ margin-top:12px; }
+
+  .meta{ font-size:11px; font-weight:600; color:var(--tenue); margin:0 6px 4px; }
+  .row.bot .meta{ color:var(--cian); }
+
+  .bubble{
+    max-width:82%;
+    padding:10px 14px;
+    border-radius:19px;
+    font-size:14px; line-height:1.42;
+    white-space:pre-wrap; word-wrap:break-word; overflow-wrap:anywhere;
+    animation:aparece .17s ease;
+  }
+  @keyframes aparece{ from{ opacity:0; transform:translateY(4px); } to{ opacity:1; transform:none; } }
+  .bubble.user{
+    background:linear-gradient(135deg,var(--acento),var(--acento-2));
+    color:#fff; border-bottom-right-radius:7px;
+    box-shadow:0 2px 10px rgba(63,123,232,.28);
+  }
+  .bubble.bot{
+    background:var(--panel-2);
+    border:1px solid var(--borde);
+    border-bottom-left-radius:7px;
+  }
+
+  .sys{ align-self:center; font-size:11px; color:var(--tenue); margin:10px 0; }
+
+  .puntitos{ display:inline-flex; gap:4px; padding:3px 2px; }
+  .puntitos i{ width:6px; height:6px; border-radius:50%; background:var(--tenue); animation:rebote 1s ease-in-out infinite; }
+  .puntitos i:nth-child(2){ animation-delay:.15s; }
+  .puntitos i:nth-child(3){ animation-delay:.3s; }
+  @keyframes rebote{ 0%,80%,100%{ transform:translateY(0); opacity:.4; } 40%{ transform:translateY(-5px); opacity:1; } }
+
+  /* ---------- barra de entrada ---------- */
+  .barra{ padding:10px 16px 14px; display:flex; flex-direction:column; gap:10px; border-top:1px solid var(--borde); background:rgba(255,255,255,.03); }
+  .pill{
+    display:flex; align-items:flex-end; gap:8px;
+    background:var(--panel); border:1px solid var(--borde);
+    border-radius:22px; padding:5px 5px 5px 6px;
+    transition:border-color .15s;
+  }
+  .pill:focus-within{ border-color:rgba(120,160,255,.5); }
+
+  .mic{
+    width:36px; height:36px; flex:none;
+    border:0; border-radius:50%; cursor:pointer;
+    background:transparent; color:var(--tenue);
+    display:grid; place-items:center; transition:.14s;
+  }
+  .mic svg{ width:18px; height:18px; }
+  .mic:hover{ background:rgba(255,255,255,.08); color:var(--texto); }
+  .mic.activo{ background:var(--peligro); color:#fff; animation:pulso 1.35s ease-in-out infinite; }
+  @keyframes pulso{
+    0%,100%{ box-shadow:0 0 0 0 rgba(242,86,75,.55); }
+    70%{ box-shadow:0 0 0 9px rgba(242,86,75,0); }
+  }
+  #texto{
+    flex:1; background:transparent; border:0; outline:0; resize:none;
+    color:var(--texto); font:14px/1.4 inherit;
+    max-height:120px; padding:9px 0;
+  }
+  #texto::placeholder{ color:rgba(255,255,255,.38); }
+  .enviar{
+    width:36px; height:36px; flex:none;
+    border:0; border-radius:50%; cursor:pointer;
+    background:linear-gradient(135deg,var(--acento),var(--acento-2));
+    color:#fff; display:grid; place-items:center;
+    transition:transform .12s, filter .12s, border-radius .18s, background .18s;
+  }
+  .enviar:hover{ filter:brightness(1.09); }
+  .enviar:active{ transform:scale(.92); }
+  .enviar svg{ width:17px; height:17px; }
+  .enviar.stop{ background:var(--peligro); border-radius:11px; }
+
+  .toggle{ display:flex; align-items:center; gap:9px; padding-left:4px; font-size:11.5px; color:var(--tenue); user-select:none; }
+  .sw{ position:relative; width:38px; height:22px; flex:none; }
+  .sw input{ opacity:0; width:0; height:0; }
+  .sw span{ position:absolute; inset:0; border-radius:22px; background:rgba(255,255,255,.14); transition:.18s; }
+  .sw span::before{ content:""; position:absolute; width:18px; height:18px; left:2px; top:2px; border-radius:50%; background:#fff; transition:.18s; box-shadow:0 1px 3px rgba(0,0,0,.35); }
+  .sw input:checked + span{ background:var(--verde); }
+  .sw input:checked + span::before{ transform:translateX(16px); }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="ctrl">
+    <button class="pin" id="pin" title="Fijar encima de todo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5M9 10.76V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v6.76a2 2 0 0 0 .59 1.42l1 1A2 2 0 0 1 18 15H6a2 2 0 0 1 1.41-3.83l1-1A2 2 0 0 0 9 10.76z"/></svg>
+    </button>
+    <button class="min" title="Minimizar" onclick="apiCall('minimizar')">–</button>
+    <button class="cerrar" title="Cerrar" onclick="apiCall('cerrar')">×</button>
+  </div>
+  <header class="pywebview-drag-region">
+    <div class="marca"><span class="rayo">⚡</span><span>Viernes</span></div>
+    <div class="estado" hidden><span class="dot" id="dot"></span><span id="estadoTxt"></span></div>
+  </header>
+
+  <div class="msgs" id="msgs"></div>
+
+  <div class="barra">
+    <div class="pill">
+      <button class="mic" id="mic" title="Hablar (lo mismo que F9)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5"/></svg>
+      </button>
+      <textarea id="texto" rows="1" placeholder="Escribí un mensaje…" autocomplete="off"></textarea>
+      <button class="enviar" id="btn" title="Enviar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+      </button>
+    </div>
+    <label class="toggle">
+      <span class="sw"><input type="checkbox" id="voz" checked><span></span></span>
+      Responder por voz
+    </label>
+  </div>
+</div>
+
+<script>
+  const $msgs = document.getElementById('msgs');
+  const $texto = document.getElementById('texto');
+  const $btn = document.getElementById('btn');
+  const $voz = document.getElementById('voz');
+  const $dot = document.getElementById('dot');
+  const $estadoTxt = document.getElementById('estadoTxt');
+  const $mic = document.getElementById('mic');
+  const $pin = document.getElementById('pin');
+
+  let procesando = false;
+  let ultimoQuien = null;
+  let micActivo = false;
+
+  function apiCall(fn, ...args){
+    if (window.pywebview && window.pywebview.api && window.pywebview.api[fn]){
+      window.pywebview.api[fn](...args);
+    }
+  }
+
+  function alFondo(){ $msgs.scrollTop = $msgs.scrollHeight; }
+
+  function fila(quien){
+    const r = document.createElement('div');
+    r.className = 'row ' + (quien === 'usuario' ? 'user' : 'bot');
+    if (ultimoQuien !== quien) r.classList.add('nuevo');
+    ultimoQuien = quien;
+    return r;
+  }
+
+  // ---- llamadas desde Python ----
+  window.vrnAgregar = function(quien, texto, hora){
+    const r = fila(quien);
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.textContent = (quien === 'usuario' ? 'Vos' : 'Viernes') + '  ·  ' + hora;
+    const b = document.createElement('div');
+    b.className = 'bubble ' + (quien === 'usuario' ? 'user' : 'bot');
+    b.textContent = texto;
+    r.append(meta, b);
+    $msgs.appendChild(r);
+    alFondo();
+  };
+
+  window.vrnSistema = function(texto){
+    ultimoQuien = null;
+    const s = document.createElement('div');
+    s.className = 'sys';
+    s.textContent = texto;
+    $msgs.appendChild(s);
+    alFondo();
+  };
+
+  let $pensando = null;
+  window.vrnPensando = function(on){
+    if (on){
+      if ($pensando) return;
+      ultimoQuien = null;
+      const r = fila('asistente');
+      const b = document.createElement('div');
+      b.className = 'bubble bot';
+      b.innerHTML = '<span class="puntitos"><i></i><i></i><i></i></span>';
+      r.appendChild(b);
+      $msgs.appendChild(r);
+      $pensando = r;
+      alFondo();
+    } else if ($pensando){
+      $pensando.remove();
+      $pensando = null;
+    }
+  };
+
+  window.vrnEstado = function(texto, color){
+    texto = texto || '';
+    $estadoTxt.textContent = texto;
+    $dot.style.background = color;
+    $dot.classList.toggle('vivo', /Escuchando|Transcribiendo|preguntando/i.test(texto));
+    // en reposo (sin texto) se esconde toda la línea de estado
+    document.querySelector('.estado').hidden = !texto;
+    // el botón de mic solo queda encendido mientras está grabando
+    if (!/Escuchando/i.test(texto)) apagarMic();
+  };
+
+  function apagarMic(){
+    micActivo = false;
+    $mic.classList.remove('activo');
+  }
+
+  $mic.addEventListener('click', () => {
+    if (procesando) return;               // hay un mensaje de texto en curso
+    micActivo = !micActivo;
+    $mic.classList.toggle('activo', micActivo);
+    apiCall('mic', micActivo);            // true = grabar, false = cortar y procesar
+  });
+
+  window.vrnReactivar = function(){
+    procesando = false;
+    $btn.classList.remove('stop');
+    $texto.disabled = false;
+    $texto.focus();
+  };
+
+  // ---- envío ----
+  function enviar(){
+    if (procesando){ apiCall('cancelar'); return; }
+    const t = $texto.value.trim();
+    if (!t) return;
+    $texto.value = '';
+    autoGrow();
+    procesando = true;
+    $btn.classList.add('stop');
+    $texto.disabled = true;
+    apiCall('enviar', t);
+  }
+
+  $btn.addEventListener('click', enviar);
+  $texto.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); enviar(); }
+  });
+
+  function autoGrow(){
+    $texto.style.height = 'auto';
+    $texto.style.height = Math.min($texto.scrollHeight, 120) + 'px';
+  }
+  $texto.addEventListener('input', autoGrow);
+
+  $voz.addEventListener('change', () => apiCall('set_voz', $voz.checked));
+
+  // ---- fijar encima de todo (pin) ----
+  let fijado = false;
+  try { fijado = localStorage.getItem('vrn_pin') === '1'; } catch (e) {}
+
+  function aplicarPin(){
+    $pin.classList.toggle('activo', fijado);
+    $pin.title = fijado ? 'Desfijar' : 'Fijar encima de todo';
+    apiCall('pin', fijado);
+    try { localStorage.setItem('vrn_pin', fijado ? '1' : '0'); } catch (e) {}
+  }
+  $pin.addEventListener('click', () => { fijado = !fijado; aplicarPin(); });
+
+  window.addEventListener('pywebviewready', () => {
+    apiCall('ready');
+    if (fijado) aplicarPin();   // restaurar el estado fijado de la sesión anterior
+  });
+</script>
+</body>
+</html>

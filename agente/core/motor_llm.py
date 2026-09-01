@@ -1,7 +1,6 @@
 """Motor LLM del agente: carga Gemma 4 E2B una sola vez via litert-lm-api,
-en GPU -- el motor ganador de la Fase 0 del plan (ver
-privado/spikes/spike_litertlm.py: 10/10 de precision en las 10 frases de
-prueba, 1-2s por comando en GPU vs 5-9s en CPU).
+en GPU -- el motor ganador de la comparativa inicial (10/10 de precision en
+las 10 frases de prueba, 1-2s por comando en GPU vs 5-9s en CPU).
 
 ejecutar_turno() manda un comando de voz con las skills registradas y
 devuelve el texto a decir en voz alta. Si el modelo ejecuta una tool y no
@@ -36,9 +35,11 @@ SYSTEM_MESSAGE = (
 
 _engine = None
 
-# Serializa los turnos: ahora el motor se usa desde dos lados (push-to-talk
-# por voz en main.py y la ventana de chat en core/chat.py), y tocar el mismo
-# Engine desde dos hilos a la vez es justo lo que el resto del codigo evita.
+# Serializa los turnos: el motor se usa desde dos lados (push-to-talk por voz
+# en main.py y la ventana de chat), y tocar el mismo Engine desde dos hilos a
+# la vez es justo lo que el resto del codigo evita. Cubre tanto la creacion
+# perezosa del Engine como cada turno. No es reentrante: cargar() y
+# ejecutar_turno() nunca se llaman uno dentro del otro bajo el candado.
 _lock = threading.Lock()
 
 
@@ -69,11 +70,12 @@ class _RegistradorTools(interfaces.ToolEventHandler):
 
 def cargar():
     """Carga el modelo una sola vez. Llamar al arrancar el programa, antes
-    de ejecutar_turno() (si no se llamo antes, ejecutar_turno la llama
-    sola, pero entonces el primer comando paga el costo de carga)."""
+    de ejecutar_turno() (si no se llamo antes, ejecutar_turno la crea sola,
+    pero entonces el primer comando paga el costo de carga)."""
     global _engine
-    if _engine is None:
-        _engine = Engine(MODEL_PATH, backend=_backend())
+    with _lock:
+        if _engine is None:
+            _engine = Engine(MODEL_PATH, backend=_backend())
     return _engine
 
 
@@ -83,11 +85,12 @@ def ejecutar_turno(texto, tools):
     Devuelve (texto_respuesta, llamadas) -- llamadas es una lista de
     {"tool", "args", "resultado"} por cada tool que se ejecuto (vacia si
     el modelo respondio directo), para poder loguear el detalle."""
-    if _engine is None:
-        cargar()
+    global _engine
 
     registrador = _RegistradorTools()
     with _lock:
+        if _engine is None:  # primer turno sin cargar() previo: se crea aca
+            _engine = Engine(MODEL_PATH, backend=_backend())
         conversacion = _engine.create_conversation(
             tools=tools,
             system_message=SYSTEM_MESSAGE,

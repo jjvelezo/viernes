@@ -1,6 +1,7 @@
-import cv2
-import time
 import sys
+import time
+
+import cv2
 
 
 def main():

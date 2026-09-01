@@ -1,6 +1,6 @@
-"""Skill: control de volumen maestro del sistema (pycaw). Adaptado de
-fase6_asistente.py:192-220, agregando anotaciones de tipo y devolviendo
-texto de confirmacion (ver nota en skills/apps.py sobre por que)."""
+"""Skill: control de volumen maestro del sistema (pycaw). Reescrita de un
+prototipo previo, agregando anotaciones de tipo y devolviendo un texto de
+confirmacion para que el asistente lo diga en voz alta."""
 
 import comtypes
 from pycaw.pycaw import AudioUtilities

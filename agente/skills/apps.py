@@ -1,7 +1,7 @@
-"""Skill: abrir aplicaciones de escritorio. Adaptado de
-fase6_asistente.py:24-70, con un cambio de fondo: en vez de un diccionario
-fijo a mano (que se desactualiza solo con instalar/desinstalar algo, y
-puede ofrecerle al LLM apps que el usuario ni tiene -- ej. "Notion"), se
+"""Skill: abrir aplicaciones de escritorio. Reescrita de un prototipo
+previo, con un cambio de fondo: en vez de un diccionario fijo a mano (que
+se desactualiza solo con instalar/desinstalar algo, y puede ofrecerle al
+LLM apps que el usuario ni tiene -- ej. "Notion"), se
 arma un indice real de lo que esta instalado leyendo los accesos directos
 del Menu Inicio de Windows (las dos carpetas estandar de "Start Menu\\
 Programs", la de todos los usuarios y la del usuario actual). Cada acceso

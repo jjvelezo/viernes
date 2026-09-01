@@ -1,36 +1,39 @@
-"""Agente base -- Fase 2 del plan + chat de texto:
+"""Agente: push-to-talk por voz + chat de texto.
+
 F9 graba, Whisper transcribe, el motor LLM (Gemma 4 E2B via litert-lm-api
 en GPU -- ver core/motor_llm.py) decide si responde directo o llama una
-skill, y la respuesta se dice en voz alta. Ademas una ventanita de chat
-abajo a la derecha (core/chat.py) permite escribirle en vez de hablarle --
-va al mismo motor local, con las mismas skills.
+skill, y la respuesta se dice en voz alta. Ademas una ventana de chat
+abajo a la derecha (core/chat_web.py, HTML/CSS en un WebView) permite
+escribirle en vez de hablarle -- va al mismo motor local, con las mismas
+skills.
 
-Un solo proceso levanta tres cosas (igual que fase11_chat.py del proyecto
-padre): el icono de bandeja, el push-to-talk por voz y la ventana de chat.
+Un solo proceso levanta tres cosas: el icono de bandeja, el push-to-talk
+por voz y la ventana de chat.
 
-Detalle de hilos (Windows): pystray y Tkinter se pelean por el bucle de
+Detalle de hilos (Windows): pystray y pywebview se pelean por el bucle de
 mensajes del hilo principal, asi que la bandeja va con icon.run_detached()
-(su propio hilo) y customtkinter se queda con el mainloop() del principal.
-Todo lo que viene de otros hilos hacia la ventana se encola en su cola y lo
-corre el poller de Tk -- nunca se toca un widget desde afuera del hilo Tk.
+(su propio hilo) y pywebview se queda con webview.start() en el principal.
+window.evaluate_js de pywebview es thread-safe, asi que desde otros hilos
+se le habla a la pagina directo (sin cola ni marshalling como con Tk).
 
-Proyecto separado de Viernes por diseno: no importa nada de
-fase1-4/main.py/fase6-11 de la carpeta padre, para poder moverse a su
-propia carpeta/repo con git mv sin arrastrar el mouse gestual."""
+agente/ ES Viernes y es el nucleo del repo. La carpeta hermana
+mouse_gestual/ (skill de gestos, proceso aparte) NO se importa nunca aca
+-- lo que se necesitaba de ahi se reescribio, no se importo -- asi agente/
+puede moverse a su propio repo con git mv sin arrastrar nada."""
 
 import random
 import sys
 import threading
 import time
 
-import customtkinter as ctk
 import keyboard
 import pystray
+import webview
 from PIL import Image, ImageDraw
 
 import config
 import skills
-from core import chat, logs, motor_llm
+from core import chat_web, logs, motor_llm
 from core.voz import EstadoGrabacion, cargar_modelo_stt, detener_reproduccion, hablar, iniciar_stream, transcribir
 
 TECLA_PTT = config.obtener("push_to_talk.key", "f9")
@@ -40,9 +43,9 @@ LOG = logs.configurar()
 # Referencia global al stream de audio: sin esto, el objeto sd.InputStream
 # que devuelve iniciar_stream() no tiene ningun referente en Python y puede
 # destruirse mientras sigue activo -- eso corrompe el heap y crashea el
-# proceso con STATUS_BREAKPOINT (visto durante el desarrollo de este
-# archivo). fase10_asistente_ptt.py no tiene este problema porque crea el
-# stream directo en setup() y lo mantiene como variable local ahi mismo.
+# proceso con STATUS_BREAKPOINT (visto en desarrollo). Un prototipo anterior
+# no tenia este problema porque creaba el stream como variable local en su
+# setup(), donde quedaba referenciado.
 _STREAM_AUDIO = None
 
 # Estado del turno actual, para decidir que hacer si apretan F9 de nuevo
@@ -77,19 +80,23 @@ _ICONOS_ESTADO = {
 }
 
 
-def _procesar(audio, modelo):
+def _procesar(audio, modelo, mostrar_en_chat=None):
     texto = transcribir(audio, modelo)
     if not texto:
         LOG.info("(audio sin texto reconocible)")
         return
 
     LOG.info('Comando: "%s"', texto)
+    if mostrar_en_chat:
+        mostrar_en_chat("usuario", texto)  # el turno de voz también se ve en el chat
     t0 = time.time()
     try:
         respuesta, llamadas = motor_llm.ejecutar_turno(texto, skills.TOOLS)
     except Exception:  # una skill puede fallar (app no encontrada, etc.)
         LOG.exception("Error ejecutando el turno")
         _estado_turno["valor"] = ESTADO_HABLANDO
+        if mostrar_en_chat:
+            mostrar_en_chat("asistente", "Hubo un error, no pude hacerlo.")
         hablar("Hubo un error, no pude hacerlo.")
         return
     duracion = time.time() - t0
@@ -99,6 +106,8 @@ def _procesar(audio, modelo):
     LOG.info('Respuesta (%.2fs): "%s"', duracion, respuesta)
 
     if respuesta:
+        if mostrar_en_chat:
+            mostrar_en_chat("asistente", respuesta)
         _estado_turno["valor"] = ESTADO_HABLANDO
         hablar(respuesta)
 
@@ -129,16 +138,13 @@ def _saludar():
             _estado_turno["valor"] = ESTADO_IDLE
 
 
-def _arrancar(icono, ventana):
-    """Carga los modelos y engancha el push-to-talk. Corre en un hilo
-    aparte para no trabar el mainloop de Tk mientras Gemma carga (10-30s en
-    GPU). `cambiar_estado` actualiza icono de bandeja + cartel de la
-    ventana; se llama desde el hilo del hook de teclado, asi que a la
-    ventana se le habla siempre por la cola."""
-
-    def cambiar_estado(nombre):
-        icono.icon = _ICONOS_ESTADO.get(nombre, ICONO_INACTIVO)
-        ventana.encolar(lambda: ventana.set_estado_ptt(nombre))
+def _arrancar(cambiar_estado, mostrar_en_chat, api):
+    """Carga los modelos y engancha el push-to-talk. Lo corre webview.start()
+    en un hilo aparte, así la carga de Gemma (10-30s en GPU) no traba el loop
+    de la ventana. `cambiar_estado` actualiza icono de bandeja + cartel de la
+    ventana; se llama desde el hilo del hook de teclado (evaluate_js de
+    pywebview es thread-safe, no hace falta marshalling). `api` se usa para
+    engancharle al botón de micrófono del chat el mismo flujo que F9."""
 
     LOG.info("Cargando modelo STT...")
     modelo = cargar_modelo_stt()
@@ -166,7 +172,7 @@ def _arrancar(icono, ventana):
 
     def procesar_en_hilo_aparte(audio):
         try:
-            _procesar(audio, modelo)
+            _procesar(audio, modelo, mostrar_en_chat)
         finally:
             # Si ya arranco una grabacion nueva (barge-in mientras esta
             # funcion segui corriendo), no pisar ese estado/icono.
@@ -181,23 +187,34 @@ def _arrancar(icono, ventana):
         audio = estado.detener()
         _estado_turno["valor"] = ESTADO_PROCESANDO
         cambiar_estado("procesando")
-        # Igual que en fase10: despachar a un hilo aparte para no bloquear
-        # el hilo del hook de teclado (Windows puede desenganchar un hook
-        # que tarda demasiado en responder).
+        # Despachar a un hilo aparte para no bloquear el hilo del hook de
+        # teclado (Windows puede desenganchar un hook que tarda demasiado en
+        # responder).
         threading.Thread(target=procesar_en_hilo_aparte, args=(audio,), daemon=True).start()
 
     keyboard.on_press_key(TECLA_PTT, al_presionar)
     keyboard.on_release_key(TECLA_PTT, al_soltar)
 
+    # El botón de micrófono del chat dispara exactamente lo mismo que F9
+    # (apretar = empezar a grabar, soltar = cortar y procesar).
+    api._mic_iniciar = lambda: al_presionar(None)
+    api._mic_finalizar = lambda: al_soltar(None)
+
 
 def main():
     LOG.info('=== Agente base + chat -- mantene "%s" para hablar, o escribi en la ventana ===', TECLA_PTT.upper())
 
-    ctk.set_appearance_mode("dark")
-    ctk.set_default_color_theme("dark-blue")
-    root = ctk.CTk()
-    ventana = chat.VentanaChat(root)
-    root.withdraw()  # arranca oculta: solo el icono de bandeja
+    api, ventana = chat_web.crear()  # ventana WebView, todavía sin arrancar el loop
+
+    def cambiar_estado(nombre):
+        try:
+            icono.icon = _ICONOS_ESTADO.get(nombre, ICONO_INACTIVO)
+        except Exception:
+            pass
+        api.set_estado_ptt(nombre)
+
+    def mostrar_en_chat(quien, texto):
+        api.agregar(quien, texto)
 
     # Saludar y abrir la rutina de inicio YA, mientras cargan los modelos
     # (edge-tts, abrir apps y Spotify no dependen de Whisper/Gemma) -- asi
@@ -207,10 +224,10 @@ def main():
         threading.Thread(target=skills.rutina.ejecutar_al_inicio, daemon=True).start()
 
     def _mostrar(_icon, _item):
-        ventana.encolar(ventana.mostrar)
+        ventana.show()
 
     def _salir(_icon, _item):
-        ventana.encolar(ventana.cerrar_todo)
+        ventana.destroy()
 
     icono = pystray.Icon(
         "agente",
@@ -223,10 +240,11 @@ def main():
     )
     icono.run_detached()
 
-    threading.Thread(target=_arrancar, args=(icono, ventana), daemon=True).start()
-
     try:
-        root.mainloop()
+        # webview.start() bloquea el hilo principal y corre _arrancar en un
+        # hilo aparte una vez que la ventana está lista. Vuelve cuando se
+        # cierra la ventana (X o "Salir" de la bandeja).
+        webview.start(lambda: _arrancar(cambiar_estado, mostrar_en_chat, api), debug=False)
     finally:
         keyboard.unhook_all()
         if _STREAM_AUDIO is not None:

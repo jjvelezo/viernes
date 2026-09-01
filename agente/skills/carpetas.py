@@ -1,6 +1,7 @@
 """Skill: abrir carpetas conocidas (Escritorio, Documentos, Descargas) y
-proyectos dentro de Documents/Proyectos -- mismo mapeo de carpetas base
-que ya usa fase6_asistente.leer_ventana_activa() (CARPETAS_BUSQUEDA)."""
+proyectos dentro de Documents/Proyectos. Match de nombres tolerante a
+transcripcion de voz (exacto -> contencion -> difuso), mismo patron que
+skills/spotify.py y skills/apps.py."""
 
 import difflib
 import os
@@ -21,8 +22,8 @@ CARPETAS_CONOCIDAS = {
 
 def _buscar_proyecto(clave):
     """Busca `clave` entre las subcarpetas de Documents/Proyectos --
-    exacto primero, despues por contencion (ej. "jarvis" dentro de
-    "jarvis_template" -- nombres con sufijos como "_template"/"-aws"/" v2"
+    exacto primero, despues por contencion (ej. "viernes" dentro de
+    "viernes-v2" -- nombres con sufijos como "_template"/"-aws"/" v2"
     son comunes y el fuzzy-match por similitud total los deja afuera),
     y por ultimo el mas parecido en general (los nombres vienen de una
     transcripcion de voz, no van a ser exactos siempre)."""

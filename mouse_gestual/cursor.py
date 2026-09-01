@@ -1,4 +1,6 @@
-"""Fase 4 - Cursor virtual: mueve el cursor real del sistema (prueba por teclado, sin cámara)."""
+"""Cursor virtual: mueve el cursor y las ventanas reales del sistema vía
+pywin32 (sin dependencia de cámara/MediaPipe). Ejecutado solo tiene un
+menú por teclado para probar sin cámara."""
 
 import ctypes
 import sys
@@ -203,7 +205,7 @@ def pedir_entero(mensaje):
 
 
 def menu():
-    print("=== Fase 4: mover cursor (prueba manual sin cámara) ===")
+    print("=== Cursor virtual: prueba manual sin cámara ===")
     ancho, alto = obtener_resolucion_pantalla()
     print(f"Resolución detectada: {ancho}x{alto}\n")
 
