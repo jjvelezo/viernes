@@ -13,6 +13,9 @@
   "push_to_talk": {
     "key": "f9"
   },
+  "chat": {
+    "tema": "moderno"
+  },
   "carpetas": {
     "proyectos": "~/Documents/Proyectos"
   },

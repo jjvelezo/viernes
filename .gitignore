@@ -60,6 +60,9 @@ claude_desktop_config.json
 .amazonq/
 .junie/
 
+# --- Preferencias locales del chat ---
+agente/core/chat_ui/.tema
+
 # --- Sistema operativo ---
 .DS_Store
 Thumbs.db

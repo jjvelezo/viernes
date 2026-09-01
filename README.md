@@ -24,7 +24,7 @@ viernes/
 │   ├── core/
 │   │   ├── voz.py         # grabación (sounddevice) + STT (faster-whisper) + TTS (edge-tts)
 │   │   ├── motor_llm.py   # carga Gemma 4 E2B en GPU vía litert-lm-api, ejecuta el turno
-│   │   ├── chat_web.py    # ventana de chat (pywebview + WebView2), UI en chat_ui/
+│   │   ├── chat_web.py    # ventana de chat (pywebview + WebView2); UI en chat_ui/ (temas: moderno / retro)
 │   │   └── logs.py        # log rotativo de cada turno (a privado/, no se sube)
 │   ├── skills/            # una capacidad = un módulo con TOOLS = [...]
 │   └── scripts/           # spotify_auth.py, abrir_por_palmada.py (auxiliares)
@@ -205,9 +205,16 @@ cp agente/.env.example        agente/.env           # solo si vas a usar Spotify
 ```powershell
 ./venv/Scripts/python.exe agente/main.py
 ```
-Mantener **F9** para hablar, o escribir en la ventana de chat. El ícono de
-la bandeja muestra el estado (gris = esperando, azul = grabando, naranja =
-procesando). Salir por el menú del ícono ("Salir").
+Mantener **F9** para hablar, o escribir en la ventana de chat (también tiene
+un botón de micrófono que hace lo mismo que F9). El ícono de la bandeja
+muestra el estado (gris = esperando, azul = grabando, naranja = procesando).
+Salir por el menú del ícono ("Salir").
+
+La ventana de chat tiene dos temas conmutables en caliente desde el botón de
+la cabecera: **moderno** (glass oscuro) y **retro** (terminal CRT ámbar). La
+elección se recuerda entre arranques; el default sale de `chat.tema` en
+`config.json`. También se puede fijar la ventana encima de todo (botón de
+chincheta).
 
 **Mouse gestual** (proceso aparte; también lo lanza la skill `manos_libres`):
 ```powershell

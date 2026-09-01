@@ -26,6 +26,7 @@ from pathlib import Path
 
 import webview
 
+import config
 import skills
 from core import motor_llm
 from core.voz import hablar
@@ -33,6 +34,29 @@ from core.voz import hablar
 _LOG = logging.getLogger("agente.chat")
 
 _HTML = Path(__file__).with_name("chat_ui") / "index.html"
+# Recuerda la elección de tema (moderno / retro) entre arranques. Dotfile
+# local, no se sube (ver .gitignore). El default sale de config.json.
+_TEMA_FILE = _HTML.with_name(".tema")
+_TEMAS = ("moderno", "retro")
+
+
+def _tema_inicial() -> str:
+    try:
+        t = _TEMA_FILE.read_text(encoding="utf-8").strip()
+        if t in _TEMAS:
+            return t
+    except Exception:
+        pass
+    t = config.obtener("chat.tema", "moderno")
+    return t if t in _TEMAS else "moderno"
+
+
+def _guardar_tema(nombre: str):
+    if nombre in _TEMAS:
+        try:
+            _TEMA_FILE.write_text(nombre, encoding="utf-8")
+        except Exception:
+            pass
 
 ANCHO, ALTO = 440, 640
 MARGEN = 28  # px desde el borde inferior-derecho
@@ -149,6 +173,11 @@ class _Api:
         if self._hwnd:
             _fijar_encima(self._hwnd, self._fijado)
 
+    def set_tema(self, nombre):
+        """La página ya cambió el look sola; acá solo se persiste la elección
+        para el próximo arranque."""
+        _guardar_tema(nombre)
+
     def ready(self):
         self.set_estado_ptt("inactivo")
         self.agregar(
@@ -230,9 +259,19 @@ def crear():
     El caller hace webview.start(...) en el hilo principal."""
     api = _Api()
     x, y = _pos_abajo_derecha()
+
+    # Se pasa el HTML como string (no url=) para poder hornearle el tema
+    # elegido en <html data-tema="..."> — pywebview le mete %3F a un
+    # file://...?query y lo rompe, y localStorage no persiste entre arranques.
+    html = _HTML.read_text(encoding="utf-8")
+    tema = _tema_inicial()
+    if tema != "moderno":
+        html = html.replace('<html lang="es" data-tema="moderno">',
+                             f'<html lang="es" data-tema="{tema}">', 1)
+
     ventana = webview.create_window(
         "Viernes",
-        url=_HTML.as_uri(),
+        html=html,
         js_api=api,
         width=ANCHO,
         height=ALTO,
