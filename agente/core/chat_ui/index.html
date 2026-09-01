@@ -21,6 +21,7 @@
     --verde: #33d17a;
   }
   *{ box-sizing:border-box; margin:0; padding:0; }
+  .pxi{ display:none; }   /* iconos pixel-art: solo en el tema retro */
   :root,html,body{ height:100%; background:transparent; overflow:hidden; }
   body{
     font-family:-apple-system,"Segoe UI Variable Display","Segoe UI",system-ui,"Helvetica Neue",sans-serif;
@@ -236,10 +237,11 @@
   }
   :root[data-tema="retro"] .ctrl button:hover{ background:var(--r-dim); color:var(--bg); }
   :root[data-tema="retro"] .ctrl .cerrar:hover{ background:var(--r-fg); }
-  :root[data-tema="retro"] .ctrl .pin svg,
-  :root[data-tema="retro"] #tema svg{ display:none; }
-  :root[data-tema="retro"] .ctrl .pin::after{ content:"TOP"; }
-  :root[data-tema="retro"] #tema::after{ content:"MOD"; }
+  :root[data-tema="retro"] .ctrl button svg:not(.pxi){ display:none; }
+  :root[data-tema="retro"] .ctrl button .pxi{ display:block; width:13px; height:13px; }
+  :root[data-tema="retro"] .ctrl button{ padding:3px; min-width:0; }
+  :root[data-tema="retro"] .ctrl .min,
+  :root[data-tema="retro"] .ctrl .cerrar{ padding:1px 6px; font-size:11px; }
   :root[data-tema="retro"] .ctrl .pin.activo{
     background:var(--r-fg); color:var(--bg); border-color:var(--r-fg);
   }
@@ -295,24 +297,25 @@
   }
   :root[data-tema="retro"] .mic,
   :root[data-tema="retro"] .enviar{
-    width:auto; height:auto; border-radius:0; display:inline-flex; align-items:center;
+    width:auto; height:auto; border-radius:0; display:inline-flex; align-items:center; gap:5px;
     background:transparent; border:1px solid var(--r-dim); color:var(--r-fg);
-    font-family:inherit; font-size:10px; letter-spacing:1px; padding:5px 9px;
+    font-family:inherit; font-size:10px; letter-spacing:1px; padding:5px 8px;
     box-shadow:none; animation:none;
   }
-  :root[data-tema="retro"] .mic svg,
-  :root[data-tema="retro"] .enviar svg{ display:none; }
-  :root[data-tema="retro"] .mic::after{ content:"MIC"; }
-  :root[data-tema="retro"] .enviar::after{ content:"ENVIAR"; }
+  :root[data-tema="retro"] .mic svg:not(.pxi),
+  :root[data-tema="retro"] .enviar svg:not(.pxi){ display:none; }
+  :root[data-tema="retro"] .mic .pxi,
+  :root[data-tema="retro"] .enviar .pxi{ display:block; width:14px; height:14px; }
   :root[data-tema="retro"] .enviar.stop{ border-color:var(--r-fg); }
-  :root[data-tema="retro"] .enviar.stop::after{ content:"STOP"; }
+  :root[data-tema="retro"] .enviar.stop .pxi{ display:none; }
+  :root[data-tema="retro"] .enviar.stop::after{ content:"\25A0"; font-size:12px; }
   :root[data-tema="retro"] .mic:hover,
   :root[data-tema="retro"] .enviar:hover{ background:var(--r-fg); color:var(--bg); }
   :root[data-tema="retro"] .mic.activo{
     background:var(--r-fg); color:var(--bg); border-color:var(--r-fg);
     animation:blinkr 1.1s steps(1) infinite;
   }
-  :root[data-tema="retro"] .mic.activo::after{ content:"\25CF REC"; }
+  :root[data-tema="retro"] .mic.activo::after{ content:"REC"; }
 
   :root[data-tema="retro"] .toggle{
     color:var(--r-dim); text-transform:uppercase; letter-spacing:1.5px; font-size:9.5px; gap:7px;
@@ -341,9 +344,11 @@
   <div class="ctrl">
     <button id="tema" title="Cambiar a modo retro">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8M12 18v3M6 8h.01M9 8h6"/></svg>
+      <svg class="pxi" viewBox="0 0 12 12" fill="currentColor" shape-rendering="crispEdges"><rect x="1" y="2" width="10" height="1"/><rect x="1" y="8" width="10" height="1"/><rect x="1" y="3" width="1" height="5"/><rect x="10" y="3" width="1" height="5"/><rect x="4" y="9" width="4" height="1"/><rect x="3" y="10" width="6" height="1"/></svg>
     </button>
     <button class="pin" id="pin" title="Fijar encima de todo">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5M9 10.76V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v6.76a2 2 0 0 0 .59 1.42l1 1A2 2 0 0 1 18 15H6a2 2 0 0 1 1.41-3.83l1-1A2 2 0 0 0 9 10.76z"/></svg>
+      <svg class="pxi" viewBox="0 0 12 12" fill="currentColor" shape-rendering="crispEdges"><rect x="3" y="2" width="6" height="1"/><rect x="2" y="3" width="8" height="2"/><rect x="3" y="5" width="6" height="1"/><rect x="5" y="6" width="2" height="3"/><rect x="5" y="9" width="1" height="2"/></svg>
     </button>
     <button class="min" title="Minimizar" onclick="apiCall('minimizar')">–</button>
     <button class="cerrar" title="Cerrar" onclick="apiCall('cerrar')">×</button>
@@ -359,10 +364,12 @@
     <div class="pill">
       <button class="mic" id="mic" title="Hablar (lo mismo que F9)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5"/></svg>
+        <svg class="pxi" viewBox="0 0 12 12" fill="currentColor" shape-rendering="crispEdges"><rect x="4" y="1" width="4" height="6"/><rect x="3" y="5" width="1" height="2"/><rect x="8" y="5" width="1" height="2"/><rect x="3" y="7" width="6" height="1"/><rect x="5" y="8" width="2" height="2"/><rect x="4" y="10" width="4" height="1"/></svg>
       </button>
       <textarea id="texto" rows="1" placeholder="Escribí un mensaje…" autocomplete="off"></textarea>
       <button class="enviar" id="btn" title="Enviar">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+        <svg class="pxi" viewBox="0 0 12 12" fill="currentColor" shape-rendering="crispEdges"><rect x="5" y="1" width="2" height="2"/><rect x="4" y="3" width="4" height="1"/><rect x="3" y="4" width="6" height="1"/><rect x="2" y="5" width="8" height="1"/><rect x="5" y="5" width="2" height="6"/></svg>
       </button>
     </div>
     <label class="toggle">
