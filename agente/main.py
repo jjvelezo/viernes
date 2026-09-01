@@ -1,11 +1,21 @@
-"""Agente base -- Fase 2 del plan:
+"""Agente base -- Fase 2 del plan + chat de texto:
 F9 graba, Whisper transcribe, el motor LLM (Gemma 4 E2B via litert-lm-api
 en GPU -- ver core/motor_llm.py) decide si responde directo o llama una
-skill, y la respuesta se dice en voz alta. Reemplaza el "eco" de la Fase 1
-una vez confirmado que el pipeline de audio andaba bien.
+skill, y la respuesta se dice en voz alta. Ademas una ventanita de chat
+abajo a la derecha (core/chat.py) permite escribirle en vez de hablarle --
+va al mismo motor local, con las mismas skills.
+
+Un solo proceso levanta tres cosas (igual que fase11_chat.py del proyecto
+padre): el icono de bandeja, el push-to-talk por voz y la ventana de chat.
+
+Detalle de hilos (Windows): pystray y Tkinter se pelean por el bucle de
+mensajes del hilo principal, asi que la bandeja va con icon.run_detached()
+(su propio hilo) y customtkinter se queda con el mainloop() del principal.
+Todo lo que viene de otros hilos hacia la ventana se encola en su cola y lo
+corre el poller de Tk -- nunca se toca un widget desde afuera del hilo Tk.
 
 Proyecto separado de Viernes por diseno: no importa nada de
-fase1-4/main.py/fase6-10 de la carpeta padre, para poder moverse a su
+fase1-4/main.py/fase6-11 de la carpeta padre, para poder moverse a su
 propia carpeta/repo con git mv sin arrastrar el mouse gestual."""
 
 import random
@@ -13,13 +23,14 @@ import sys
 import threading
 import time
 
+import customtkinter as ctk
 import keyboard
 import pystray
 from PIL import Image, ImageDraw
 
 import config
 import skills
-from core import logs, motor_llm
+from core import chat, logs, motor_llm
 from core.voz import EstadoGrabacion, cargar_modelo_stt, detener_reproduccion, hablar, iniciar_stream, transcribir
 
 TECLA_PTT = config.obtener("push_to_talk.key", "f9")
@@ -57,6 +68,13 @@ def _icono_circulo(color):
 ICONO_INACTIVO = _icono_circulo((128, 128, 128, 255))  # gris: esperando que apretes la tecla
 ICONO_ESCUCHANDO = _icono_circulo((30, 144, 255, 255))  # azul: grabando
 ICONO_PROCESANDO = _icono_circulo((255, 140, 0, 255))  # naranja: transcribiendo
+
+# nombre de estado (el que entiende la ventana de chat) -> icono de bandeja
+_ICONOS_ESTADO = {
+    "inactivo": ICONO_INACTIVO,
+    "escuchando": ICONO_ESCUCHANDO,
+    "procesando": ICONO_PROCESANDO,
+}
 
 
 def _procesar(audio, modelo):
@@ -111,16 +129,16 @@ def _saludar():
             _estado_turno["valor"] = ESTADO_IDLE
 
 
-def setup(icon):
-    icon.visible = True
-    LOG.info('=== Agente base -- mantene "%s" para hablar ===', TECLA_PTT.upper())
+def _arrancar(icono, ventana):
+    """Carga los modelos y engancha el push-to-talk. Corre en un hilo
+    aparte para no trabar el mainloop de Tk mientras Gemma carga (10-30s en
+    GPU). `cambiar_estado` actualiza icono de bandeja + cartel de la
+    ventana; se llama desde el hilo del hook de teclado, asi que a la
+    ventana se le habla siempre por la cola."""
 
-    # Saludar y abrir la rutina de inicio YA, mientras cargan los modelos
-    # (edge-tts, abrir apps y Spotify no dependen de Whisper/Gemma) -- asi
-    # abrir Viernes no se siente lento.
-    threading.Thread(target=_saludar, daemon=True).start()
-    if config.obtener("rutina.al_iniciar", True):
-        threading.Thread(target=skills.rutina.ejecutar_al_inicio, daemon=True).start()
+    def cambiar_estado(nombre):
+        icono.icon = _ICONOS_ESTADO.get(nombre, ICONO_INACTIVO)
+        ventana.encolar(lambda: ventana.set_estado_ptt(nombre))
 
     LOG.info("Cargando modelo STT...")
     modelo = cargar_modelo_stt()
@@ -143,7 +161,7 @@ def setup(icon):
             detener_reproduccion()  # barge-in: cortar la respuesta en seco
         tecla_abajo["activa"] = True
         estado.iniciar()
-        icon.icon = ICONO_ESCUCHANDO
+        cambiar_estado("escuchando")
         LOG.info("Escuchando...")
 
     def procesar_en_hilo_aparte(audio):
@@ -154,7 +172,7 @@ def setup(icon):
             # funcion segui corriendo), no pisar ese estado/icono.
             if not estado.grabando:
                 _estado_turno["valor"] = ESTADO_IDLE
-                icon.icon = ICONO_INACTIVO
+                cambiar_estado("inactivo")
 
     def al_soltar(_evento):
         if not tecla_abajo["activa"]:
@@ -162,7 +180,7 @@ def setup(icon):
         tecla_abajo["activa"] = False
         audio = estado.detener()
         _estado_turno["valor"] = ESTADO_PROCESANDO
-        icon.icon = ICONO_PROCESANDO
+        cambiar_estado("procesando")
         # Igual que en fase10: despachar a un hilo aparte para no bloquear
         # el hilo del hook de teclado (Windows puede desenganchar un hook
         # que tarda demasiado en responder).
@@ -172,19 +190,52 @@ def setup(icon):
     keyboard.on_release_key(TECLA_PTT, al_soltar)
 
 
-def _salir(icon, _item):
-    keyboard.unhook_all()
-    icon.stop()
-
-
 def main():
-    icon = pystray.Icon(
+    LOG.info('=== Agente base + chat -- mantene "%s" para hablar, o escribi en la ventana ===', TECLA_PTT.upper())
+
+    ctk.set_appearance_mode("dark")
+    ctk.set_default_color_theme("dark-blue")
+    root = ctk.CTk()
+    ventana = chat.VentanaChat(root)
+    root.withdraw()  # arranca oculta: solo el icono de bandeja
+
+    # Saludar y abrir la rutina de inicio YA, mientras cargan los modelos
+    # (edge-tts, abrir apps y Spotify no dependen de Whisper/Gemma) -- asi
+    # abrir Viernes no se siente lento.
+    threading.Thread(target=_saludar, daemon=True).start()
+    if config.obtener("rutina.al_iniciar", True):
+        threading.Thread(target=skills.rutina.ejecutar_al_inicio, daemon=True).start()
+
+    def _mostrar(_icon, _item):
+        ventana.encolar(ventana.mostrar)
+
+    def _salir(_icon, _item):
+        ventana.encolar(ventana.cerrar_todo)
+
+    icono = pystray.Icon(
         "agente",
         icon=ICONO_INACTIVO,
-        title="Agente (Fase 2)",
-        menu=pystray.Menu(pystray.MenuItem("Salir", _salir)),
+        title="Viernes",
+        menu=pystray.Menu(
+            pystray.MenuItem("Mostrar chat", _mostrar, default=True),
+            pystray.MenuItem("Salir", _salir),
+        ),
     )
-    icon.run(setup=setup)
+    icono.run_detached()
+
+    threading.Thread(target=_arrancar, args=(icono, ventana), daemon=True).start()
+
+    try:
+        root.mainloop()
+    finally:
+        keyboard.unhook_all()
+        if _STREAM_AUDIO is not None:
+            try:
+                _STREAM_AUDIO.stop()
+                _STREAM_AUDIO.close()
+            except Exception:
+                pass
+        icono.stop()
 
 
 if __name__ == "__main__":

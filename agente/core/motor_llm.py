@@ -8,6 +8,8 @@ devuelve el texto a decir en voz alta. Si el modelo ejecuta una tool y no
 agrega comentario propio (pasa seguido con acciones simples como abrir una
 app), cae al texto que devolvio la tool misma en vez de quedarse mudo."""
 
+import threading
+
 from litert_lm import Backend, Engine, interfaces
 
 import config
@@ -27,12 +29,17 @@ SYSTEM_MESSAGE = (
     "que tenes disponible como herramienta, llamala. Si es una pregunta de "
     "conocimiento general que ya sabes responder, respondela directo sin "
     "usar ninguna herramienta. Si no sabes algo actualizado (clima, "
-    "noticias, informacion reciente) o el usuario pide explicitamente "
-    "buscar en internet, usa la herramienta correspondiente en vez de "
-    "inventar una respuesta."
+    "noticias, informacion reciente) o el usuario pide buscar algo, usa "
+    "buscar_en_internet en vez de inventar una respuesta. Solo usa "
+    "ChatGPT si el usuario lo nombra explicitamente."
 )
 
 _engine = None
+
+# Serializa los turnos: ahora el motor se usa desde dos lados (push-to-talk
+# por voz en main.py y la ventana de chat en core/chat.py), y tocar el mismo
+# Engine desde dos hilos a la vez es justo lo que el resto del codigo evita.
+_lock = threading.Lock()
 
 
 class _RegistradorTools(interfaces.ToolEventHandler):
@@ -80,13 +87,14 @@ def ejecutar_turno(texto, tools):
         cargar()
 
     registrador = _RegistradorTools()
-    conversacion = _engine.create_conversation(
-        tools=tools,
-        system_message=SYSTEM_MESSAGE,
-        automatic_tool_calling=True,
-        tool_event_handler=registrador,
-    )
-    respuesta = conversacion.send_message(texto)
+    with _lock:
+        conversacion = _engine.create_conversation(
+            tools=tools,
+            system_message=SYSTEM_MESSAGE,
+            automatic_tool_calling=True,
+            tool_event_handler=registrador,
+        )
+        respuesta = conversacion.send_message(texto)
 
     texto_respuesta = ""
     for bloque in respuesta.get("content", []):

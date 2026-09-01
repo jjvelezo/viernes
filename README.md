@@ -174,6 +174,7 @@ agente/
 └── skills/
     ├── apps.py        # abrir aplicaciones (índice del Menú Inicio de Windows)
     ├── volumen.py     # volumen maestro (pycaw)
+    ├── internet.py    # buscar en internet (Tavily; fallback a ChatGPT)
     ├── chatgpt.py     # preguntar a ChatGPT vía navegador (Playwright)
     ├── tiempo.py      # hora y fecha actual
     ├── carpetas.py    # abrir carpetas conocidas y proyectos
@@ -236,13 +237,14 @@ ignora F9) → **hablando** (reproduciendo respuesta, F9 hace barge-in).
 |---|---|---|
 | **apps** | Abrir aplicaciones de escritorio | Arma un índice real de lo instalado leyendo los `.lnk` del Menú Inicio (ambas carpetas estándar) y resolviéndolos a su ejecutable vía `WScript.Shell`. Fuzzy-match para nombres transcriptos por voz. Sin shell (evita inyección) |
 | **volumen** | Volumen maestro: fijar %, subir, bajar, silenciar | `pycaw` → `AudioDevice.EndpointVolume` |
-| **chatgpt** | Preguntar a ChatGPT / buscar en internet | Playwright con perfil persistente de Chromium, `--start-minimized` (headless lo bloquea Cloudflare). Contexto de navegador reusado entre preguntas |
+| **internet** | Buscar en internet (camino por defecto para info reciente) | API de Tavily (`/search` con `include_answer`) vía `urllib`, sin SDK. Devuelve una respuesta ya redactada — Gemma no resume. `TAVILY_API_KEY` en `.env` (free tier). Si Tavily falla o no hay key, cae a **chatgpt** |
+| **chatgpt** | Preguntar a ChatGPT (solo si el usuario lo nombra) | Playwright con perfil persistente de Chromium, `--start-minimized` (headless lo bloquea Cloudflare). Contexto de navegador reusado entre preguntas. También es el fallback de **internet** |
 | **tiempo** | Hora y fecha actual | `datetime.now()`, formateado en español |
 | **carpetas** | Abrir Escritorio/Documentos/Descargas y proyectos | Match por contención + fuzzy sobre `Documents/Proyectos/` |
 | **ventanas** | Cerrar / minimizar ventanas | `win32gui.EnumWindows` + búsqueda por título. Si hay ambigüedad, no cierra nada: pide aclarar |
 | **spotify** | Reproducir canción/playlist/mood, siguiente/anterior, pausa | Web API de Spotify con `urllib` (sin librería). Requiere Premium + correr `scripts/spotify_auth.py` una vez. Playlists arrancan en aleatorio; el play apunta al `device_id` explícito para no quedar mudo |
 | **manos_libres** | Activar / desactivar el control por gestos de la mano | Lanza `main.py` (mouse gestual) como **proceso aparte** vía `subprocess` — no importa nada de `fase1-4`, así que no puede tumbar al agente. `atexit` lo cierra al salir |
-| **rutina** | "Modo trabajo" / arranque de la jornada | Abre `rutina.apps` de `config.json` y pone `rutina.spotify_playlist_uri` en aleatorio. Con `rutina.al_iniciar: true` corre solo al arrancar el agente, en un hilo, en paralelo con la carga de modelos |
+| **rutina** | "Modo trabajo" / arranque de la jornada | Abre `rutina.apps` de `config.json` y pone `rutina.spotify_playlist_uri` en aleatorio. Con `rutina.al_iniciar: true` corre solo al arrancar el agente, en un hilo, en paralelo con la carga de modelos. En el arranque automático (correr `main.py` o la doble palmada) la playlist solo suena si la hora está dentro de `rutina.spotify_horario` (`{ "inicio": 7, "fin": 20 }` por defecto); fuera de esa franja abre las apps pero no toca Spotify. El pedido explícito por voz ignora la franja |
 
 ---
 
@@ -306,7 +308,7 @@ cp agente/.env.example        agente/.env           # solo si vas a usar Spotify
 - **`agente/config.json`** — ajustes **no secretos** propios de esta máquina: ruta
   al `.litertlm`, backend (`gpu`/`cpu`), modelo de Whisper, voz de TTS, tecla de
   push-to-talk, carpeta de proyectos, saludo de arranque (`saludo.frases`), rutina de inicio
-  (`rutina.apps` / `rutina.spotify_playlist_uri` / `rutina.al_iniciar`).
+  (`rutina.apps` / `rutina.spotify_playlist_uri` / `rutina.al_iniciar` / `rutina.spotify_horario`).
   Se ignora en git; `config.example.json` es la plantilla que sí se sube.
 - **`agente/.env`** — **solo credenciales** (`SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`).
   Se ignora en git; `.env.example` es la plantilla.

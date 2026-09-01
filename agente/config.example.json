@@ -19,10 +19,15 @@
   "spotify": {
     "mover_a_pantalla_secundaria": true
   },
+  "internet": {
+    "pais": "colombia",
+    "contexto_usuario": "El usuario está en Colombia (Bogotá). Moneda local: peso colombiano (COP). Zona horaria: America/Bogota."
+  },
   "rutina": {
     "al_iniciar": false,
     "apps": [],
-    "spotify_playlist_uri": ""
+    "spotify_playlist_uri": "",
+    "spotify_horario": { "inicio": 7, "fin": 20 }
   },
   "palmada": {
     "tecla": "ctrl+shift+f8",

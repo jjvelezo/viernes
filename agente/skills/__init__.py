@@ -4,6 +4,7 @@ para pasarle al motor LLM (ver core/motor_llm.py)."""
 from .apps import TOOLS as _TOOLS_APPS
 from .carpetas import TOOLS as _TOOLS_CARPETAS
 from .chatgpt import TOOLS as _TOOLS_CHATGPT
+from .internet import TOOLS as _TOOLS_INTERNET
 from .manos_libres import TOOLS as _TOOLS_MANOS_LIBRES
 from .rutina import TOOLS as _TOOLS_RUTINA
 from .spotify import TOOLS as _TOOLS_SPOTIFY
@@ -14,6 +15,7 @@ from .volumen import TOOLS as _TOOLS_VOLUMEN
 TOOLS = (
     _TOOLS_APPS
     + _TOOLS_VOLUMEN
+    + _TOOLS_INTERNET
     + _TOOLS_CHATGPT
     + _TOOLS_TIEMPO
     + _TOOLS_CARPETAS

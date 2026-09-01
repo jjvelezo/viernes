@@ -10,9 +10,15 @@ Que hace, desde config.json:
   - rutina.apps: lista de apps (nombre o ruta a .exe) -> las abre.
   - rutina.spotify_playlist_uri: URI/URL/ID de playlist -> la pone en
     aleatorio (y a la 2da pantalla si hay dos, ver skills/spotify.py).
+  - rutina.spotify_horario: {"inicio": 7, "fin": 20} -> la playlist solo
+    se pone en el arranque automatico (doble palmada / correr main.py) si
+    la hora actual esta en esa franja. Fuera de ese rango, la rutina abre
+    las apps igual pero NO toca Spotify. El pedido explicito por voz
+    ("arranca mi jornada") ignora la franja y siempre pone la playlist.
 """
 
 import os
+import time
 from pathlib import Path
 
 import config
@@ -32,10 +38,24 @@ def _abrir_apps():
             pass  # una app que no esta no debe frenar el resto de la rutina
 
 
-def _poner_playlist():
+def _en_horario_spotify() -> bool:
+    """True si la hora actual cae en rutina.spotify_horario (por defecto
+    7-20). El rango puede cruzar medianoche (inicio > fin)."""
+    franja = config.obtener("rutina.spotify_horario") or {}
+    inicio = int(franja.get("inicio", 7))
+    fin = int(franja.get("fin", 20))
+    hora = time.localtime().tm_hour
+    if inicio <= fin:
+        return inicio <= hora < fin
+    return hora >= inicio or hora < fin  # cruza medianoche
+
+
+def _poner_playlist(respetar_horario: bool = False):
     uri = config.obtener("rutina.spotify_playlist_uri")
     if not uri:
         return
+    if respetar_horario and not _en_horario_spotify():
+        return  # fuera de la franja horaria: la rutina sigue sin Spotify
     try:
         _spotify.reproducir_playlist_uri(uri)
     except Exception:
@@ -52,10 +72,12 @@ def iniciar_jornada() -> str:
 
 
 def ejecutar_al_inicio():
-    """Lo mismo que iniciar_jornada() pero sin texto de vuelta -- lo llama
-    main.py al arrancar el agente."""
+    """Lo mismo que iniciar_jornada() pero sin texto de vuelta y
+    respetando rutina.spotify_horario -- lo llama main.py al arrancar el
+    agente (tanto al correrlo a mano como al lanzarlo por doble palmada).
+    Fuera de la franja abre las apps pero no pone Spotify."""
     _abrir_apps()
-    _poner_playlist()
+    _poner_playlist(respetar_horario=True)
 
 
 TOOLS = [iniciar_jornada]

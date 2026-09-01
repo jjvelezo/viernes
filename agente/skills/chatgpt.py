@@ -91,14 +91,14 @@ def _cerrar():
         _playwright = None
 
 
-def preguntar_internet(pregunta: str) -> str:
-    """Busca la respuesta a una pregunta en internet (via ChatGPT) cuando
-    el conocimiento propio no alcanza -- informacion reciente, clima,
-    noticias -- o cuando el usuario pide explicitamente buscar en
-    internet o preguntarle a ChatGPT. Si preguntas algo relacionado poco
-    despues de la pregunta anterior, se manda como continuacion de esa
-    misma conversacion automaticamente -- no hace falta repetir el
-    contexto.
+def preguntar_a_chatgpt(pregunta: str) -> str:
+    """Consulta a ChatGPT. Usar UNICAMENTE cuando el usuario nombra
+    explicitamente ChatGPT o GPT ("preguntale a ChatGPT...", "busca en
+    GPT...", "que dice ChatGPT de..."). Para cualquier otra busqueda o
+    pregunta de info reciente, usar buscar_en_internet. Si preguntas algo
+    relacionado poco despues de la pregunta anterior, se manda como
+    continuacion de esa misma conversacion automaticamente -- no hace
+    falta repetir el contexto.
 
     Args:
         pregunta: la pregunta a buscar, tal como la hizo el usuario.
@@ -188,4 +188,4 @@ def _extraer_respuesta(transcripcion_completa, pregunta):
     return "\n\n".join(partes_respuesta).strip()
 
 
-TOOLS = [preguntar_internet]
+TOOLS = [preguntar_a_chatgpt]

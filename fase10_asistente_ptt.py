@@ -83,13 +83,16 @@ def _procesar_comando(audio, modelo):
         print("  (comando no reconocido, o no necesita respuesta hablada)\n")
 
 
-def setup(icon):
-    icon.visible = True
-    print(f'=== Fase 10: asistente push-to-talk (mantené "{TECLA_PTT.upper()}" para hablar) ===')
-    print(f"  Cargando modelo '{MODELO_COMANDO}'...")
-    modelo = WhisperModel(MODELO_COMANDO, device="cpu", compute_type="int8")
-    print(f'  Listo. Mantené "{TECLA_PTT.upper()}" apretada para hablar (revisá el ícono en la bandeja).')
+def iniciar_captura_ptt(modelo, al_cambiar_estado):
+    """Arranca el stream de micrófono + los hooks de teclado del
+    push-to-talk (mantener TECLA_PTT para grabar, soltar para transcribir y
+    ejecutar). `al_cambiar_estado` se llama con "escuchando" / "procesando"
+    / "inactivo" para que quien invoque refleje el estado donde quiera
+    (ícono de bandeja, ventana de chat, etc.) — ojo que se dispara desde el
+    hilo de `keyboard`, no desde el hilo principal.
 
+    Devuelve una función `limpiar()` idempotente que desengancha el teclado
+    y cierra el stream. Reusado por fase11_chat.py."""
     estado = _EstadoGrabacion()
     stream = sd.InputStream(
         samplerate=MUESTREO_HZ, channels=1, dtype="float32", callback=estado.callback_audio
@@ -102,21 +105,21 @@ def setup(icon):
         estado.tecla_abajo = True
         estado.fragmentos = []
         estado.grabando = True
-        icon.icon = ICONO_ESCUCHANDO
+        al_cambiar_estado("escuchando")
         print("  Escuchando...")
 
     def procesar_en_hilo_aparte(audio):
         try:
             _procesar_comando(audio, modelo)
         finally:
-            icon.icon = ICONO_INACTIVO
+            al_cambiar_estado("inactivo")
 
     def al_soltar(_evento):
         if not estado.tecla_abajo:
             return
         estado.tecla_abajo = False
         estado.grabando = False
-        icon.icon = ICONO_PROCESANDO
+        al_cambiar_estado("procesando")
         audio = np.concatenate(estado.fragmentos, axis=0).flatten() if estado.fragmentos else np.zeros(0, dtype="float32")
         # El hook de teclado (`keyboard`) llama a este callback desde su
         # propio hilo, que es el mismo que procesa el hook de bajo nivel de
@@ -129,6 +132,35 @@ def setup(icon):
 
     keyboard.on_press_key(TECLA_PTT, al_presionar)
     keyboard.on_release_key(TECLA_PTT, al_soltar)
+
+    ya_limpio = {"hecho": False}
+
+    def limpiar():
+        if ya_limpio["hecho"]:
+            return
+        ya_limpio["hecho"] = True
+        keyboard.unhook_all()
+        stream.stop()
+        stream.close()
+
+    return limpiar
+
+
+_ICONOS_ESTADO = {
+    "escuchando": ICONO_ESCUCHANDO,
+    "procesando": ICONO_PROCESANDO,
+    "inactivo": ICONO_INACTIVO,
+}
+
+
+def setup(icon):
+    icon.visible = True
+    print(f'=== Fase 10: asistente push-to-talk (mantené "{TECLA_PTT.upper()}" para hablar) ===')
+    print(f"  Cargando modelo '{MODELO_COMANDO}'...")
+    modelo = WhisperModel(MODELO_COMANDO, device="cpu", compute_type="int8")
+    print(f'  Listo. Mantené "{TECLA_PTT.upper()}" apretada para hablar (revisá el ícono en la bandeja).')
+
+    iniciar_captura_ptt(modelo, lambda nombre: setattr(icon, "icon", _ICONOS_ESTADO[nombre]))
 
 
 def _salir(icon, _item):
