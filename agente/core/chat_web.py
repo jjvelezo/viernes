@@ -28,7 +28,7 @@ import webview
 
 import config
 import skills
-from core import motor_llm
+from core import memoria, motor_llm
 from core.voz import hablar
 
 _LOG = logging.getLogger("agente.chat")
@@ -231,6 +231,7 @@ class _Api:
         "palmada.tecla",
         "tts.motor",
         "tts.piper_length_scale",
+        "tts.rate",
         "saludo.al_iniciar",
     )
 
@@ -256,12 +257,45 @@ class _Api:
 
     def ready(self):
         self.set_estado_ptt("inactivo")
+        turnos = memoria.turnos_actuales()
+        if turnos:  # retomar la conversación en curso
+            for t in turnos:
+                quien = "asistente" if t["rol"] == "asistente" else "usuario"
+                self._emit("vrnAgregar", quien, t["texto"], t.get("hora", ""))
+            return
         self.agregar(
             "asistente",
             "A tus órdenes. Escribime lo que necesites o mantené F9 para "
             "hablarme.\nAbro apps, manejo el volumen, controlo Spotify, leo "
             "la ventana activa y respondo preguntas.",
         )
+
+    # ---- historial de conversaciones ----
+    def listar_conversaciones(self):
+        try:
+            return memoria.listar()
+        except Exception:
+            _LOG.exception("no se pudo listar el historial")
+            return []
+
+    def cargar_conversacion(self, id_conv):
+        try:
+            turnos = memoria.cargar(id_conv)
+        except Exception as error:
+            _LOG.exception("no se pudo cargar la conversación %s", id_conv)
+            self._emit("vrnSistema", f"— {error} —")
+            return
+        self._gen += 1  # cancela cualquier turno en vuelo
+        self._emit("vrnLimpiar")
+        for t in turnos:
+            quien = "asistente" if t["rol"] == "asistente" else "usuario"
+            self._emit("vrnAgregar", quien, t["texto"], t.get("hora", ""))
+
+    def nueva_conversacion(self):
+        memoria.nueva()
+        self._gen += 1
+        self._emit("vrnLimpiar")
+        self._emit("vrnSistema", "— nueva conversación —")
 
     def set_voz(self, on):
         self._voz = bool(on)

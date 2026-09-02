@@ -37,22 +37,35 @@ PROMPT_INICIAL = (
     "Outlook, Teams, Visual Studio Code, ChatGPT."
 )
 
-VOZ_TTS = config.obtener("tts.voice", "es-MX-DaliaNeural")  # historial de voces probadas: CLAUDE.md
-RATE_TTS = config.obtener("tts.rate", "+15%")
-
-# Motor de TTS:
+# Ajustes de voz: se leen de config.json en cada sintesis (no una sola vez al
+# importar) para que el panel de personalizacion del chat tenga efecto en la
+# proxima respuesta sin reiniciar Viernes.
+#
+# Motor de TTS (`tts.motor`):
 #   "auto"  -> Piper (local, offline) si hay modelo; si no, edge-tts.
 #   "piper" -> siempre Piper (si falla la sintesis, cae a edge igual).
-#   "edge"  -> siempre edge-tts (voz "Dalia" de Azure, necesita internet).
-# Piper corre en CPU (~2x tiempo real con el modelo "high"), no pelea con
-# Gemma por la GPU, y funciona sin conexion. edge-tts suena un poco mejor
-# pero depende de la nube de Microsoft. Ver CLAUDE.md.
-MOTOR_TTS = str(config.obtener("tts.motor", "auto")).lower()
+#   "edge"  -> siempre edge-tts (necesita internet, suena un poco mejor).
+#
+# Velocidad:
+#   Piper -> `tts.piper_length_scale` (length_scale del modelo, MENOR = MAS
+#            RAPIDO; 0.8 ~= 15% mas rapido que el default 1.0; bajar de ~0.7
+#            suena atropellado).
+#   edge  -> `tts.rate` ("+15%", "-10%"...). El panel del chat mueve las dos
+#            con un solo control.
+def _voz_tts():
+    return config.obtener("tts.voice", "es-MX-DaliaNeural")  # voces probadas: CLAUDE.md
 
-# Velocidad de la voz de Piper. Es el "length_scale" del modelo: MENOR = MAS
-# RAPIDO (0.8 ~= 15% mas rapido que el default 1.0). No es lineal: bajar de
-# ~0.7 empieza a sonar atropellado.
-PIPER_LENGTH_SCALE = float(config.obtener("tts.piper_length_scale", 0.8))
+
+def _rate_tts():
+    return config.obtener("tts.rate", "+15%")
+
+
+def _motor_tts():
+    return str(config.obtener("tts.motor", "auto")).lower()
+
+
+def _piper_length_scale():
+    return float(config.obtener("tts.piper_length_scale", 0.8))
 
 _CARPETA_VOZ_PIPER = Path(__file__).resolve().parent.parent.parent / "privado" / "voz_piper"
 
@@ -214,7 +227,7 @@ def _generar_mp3_edge(texto, ruta_destino):
     Un hilo nuevo arranca siempre con asyncio limpio."""
 
     def _tarea():
-        comunicador = edge_tts.Communicate(texto, VOZ_TTS, rate=RATE_TTS)
+        comunicador = edge_tts.Communicate(texto, _voz_tts(), rate=_rate_tts())
         asyncio.run(comunicador.save(str(ruta_destino)))
 
     hilo = threading.Thread(target=_tarea)
@@ -233,7 +246,7 @@ def _cargar_piper():
     global _piper_voz, _piper_no_disponible
     if _piper_voz is not None:
         return _piper_voz
-    if _piper_no_disponible or MOTOR_TTS == "edge":
+    if _piper_no_disponible or _motor_tts() == "edge":
         return None
     with _piper_lock:
         if _piper_voz is not None:
@@ -241,7 +254,7 @@ def _cargar_piper():
         ruta = _ruta_modelo_piper()
         if ruta is None:
             _piper_no_disponible = True
-            if MOTOR_TTS == "piper":
+            if _motor_tts() == "piper":
                 _LOG.warning("tts.motor=piper pero no hay modelo en %s -> uso edge-tts", _CARPETA_VOZ_PIPER)
             return None
         try:
@@ -271,7 +284,7 @@ def _generar_wav_piper(texto, ruta_destino):
     try:
         from piper import SynthesisConfig
 
-        cfg = SynthesisConfig(length_scale=PIPER_LENGTH_SCALE)
+        cfg = SynthesisConfig(length_scale=_piper_length_scale())
         with wave.open(str(ruta_destino), "wb") as wav:
             voz.synthesize_wav(texto, wav, syn_config=cfg)
         return True
@@ -283,7 +296,7 @@ def _generar_wav_piper(texto, ruta_destino):
 def _generar_audio(texto):
     """Sintetiza `texto` a un archivo temporal y devuelve su ruta (.wav de
     Piper o .mp3 de edge-tts). El caller lo borra al terminar."""
-    usar_piper = MOTOR_TTS in ("auto", "piper")
+    usar_piper = _motor_tts() in ("auto", "piper")
     if usar_piper:
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
             ruta = Path(tmp.name)
@@ -297,7 +310,7 @@ def _generar_audio(texto):
 
 
 def _clave_cache(texto):
-    material = f"{MOTOR_TTS}|{VOZ_TTS}|{RATE_TTS}|{PIPER_LENGTH_SCALE}|{texto}".encode("utf-8")
+    material = f"{_motor_tts()}|{_voz_tts()}|{_rate_tts()}|{_piper_length_scale()}|{texto}".encode("utf-8")
     return hashlib.sha1(material).hexdigest()
 
 

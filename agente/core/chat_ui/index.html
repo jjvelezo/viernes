@@ -52,6 +52,8 @@
   }
   .marca{ display:flex; align-items:center; gap:8px; font-weight:600; font-size:16px; letter-spacing:.2px; }
   .marca .rayo{ color:var(--cian); font-size:15px; }
+  .autor{ font-size:10px; color:var(--tenue); opacity:.7; letter-spacing:.3px; padding-left:23px; }
+  :root[data-tema="retro"] .autor{ color:var(--r-dim); opacity:1; text-transform:uppercase; padding-left:14px; }
   .estado{ display:flex; align-items:center; gap:7px; font-size:11.5px; color:var(--tenue); }
   .estado[hidden]{ display:none; }  /* el atributo hidden si no, lo pisa el display:flex de arriba */
   .dot{ width:7px; height:7px; border-radius:50%; background:var(--tenue); flex:none; }
@@ -175,22 +177,40 @@
   .sw input:checked + span{ background:var(--verde); }
   .sw input:checked + span::before{ transform:translateX(16px); }
 
-  /* ---------- panel de personalización ---------- */
-  #ajustes{
+  /* ---------- panel de personalización / historial ---------- */
+  #ajustes, #historialPanel{
     position:absolute; inset:0; z-index:30;
     background:var(--bg);
     display:flex; flex-direction:column;
     animation:aparece .16s ease;
   }
-  #ajustes[hidden]{ display:none; }   /* si no, el display:flex de arriba lo pisa */
-  #ajustes header{ flex-direction:row; align-items:center; justify-content:space-between; }
-  #ajustes .cuerpo{ flex:1; overflow-y:auto; padding:14px 16px 20px; }
+  #ajustes[hidden], #historialPanel[hidden]{ display:none; }   /* si no, el display:flex de arriba lo pisa */
+  #ajustes header, #historialPanel header{ flex-direction:row; align-items:center; justify-content:space-between; }
+  #ajustes .cuerpo, #historialPanel .cuerpo{ flex:1; overflow-y:auto; padding:14px 16px 20px; }
   #ajustes .cuerpo::-webkit-scrollbar,
+  #historialPanel .cuerpo::-webkit-scrollbar,
   #ajustes textarea::-webkit-scrollbar{ width:8px; }
   #ajustes .cuerpo::-webkit-scrollbar-thumb,
+  #historialPanel .cuerpo::-webkit-scrollbar-thumb,
   #ajustes textarea::-webkit-scrollbar-thumb{ background:rgba(255,255,255,.16); border-radius:8px; border:2px solid transparent; background-clip:content-box; }
   #ajustes .cuerpo::-webkit-scrollbar-track,
+  #historialPanel .cuerpo::-webkit-scrollbar-track,
   #ajustes textarea::-webkit-scrollbar-track{ background:transparent; }
+  .conv-item{
+    display:flex; flex-direction:column; gap:2px; width:100%; text-align:left;
+    border:1px solid var(--borde); background:var(--panel); color:var(--texto);
+    border-radius:10px; padding:9px 11px; margin-bottom:7px; cursor:pointer; font:inherit;
+  }
+  .conv-item:hover{ background:var(--panel-2); }
+  .conv-item .t{ font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .conv-item .m{ font-size:10.5px; color:var(--tenue); }
+  #histNueva{
+    width:100%; border:1px solid var(--acento); background:transparent; color:var(--acento);
+    border-radius:10px; padding:9px; font:13px inherit; cursor:pointer; margin-bottom:12px;
+  }
+  #histNueva:hover{ background:var(--acento); color:#fff; }
+  :root[data-tema="retro"] #histNueva{ border-color:var(--r-fg); color:var(--r-fg); }
+  :root[data-tema="retro"] #histNueva:hover{ background:var(--r-fg); color:var(--bg); }
   #ajustes textarea.ctx{ resize:none; }
   .grupo{ margin-bottom:18px; }
   .grupo > h3{
@@ -226,7 +246,8 @@
   .btn-grab.grabando{ background:var(--peligro); border-color:var(--peligro); color:#fff; }
   .nota{ font-size:10.5px; color:var(--tenue); margin-top:6px; font-style:italic; }
 
-  :root[data-tema="retro"] #ajustes{ background:var(--bg); }
+  :root[data-tema="retro"] #ajustes,
+  :root[data-tema="retro"] #historialPanel{ background:var(--bg); }
   :root[data-tema="retro"] .grupo > h3{ color:var(--r-bright); letter-spacing:2px; }
   :root[data-tema="retro"] .grupo > h3::before{ content:"\25C8 "; color:var(--r-dim); }
   :root[data-tema="retro"] .fila{ text-transform:uppercase; letter-spacing:1px; font-size:11px; }
@@ -492,7 +513,7 @@
         <div class="fila"><span>Opacidad de la ventana</span>
           <input type="range" id="cfgOpacidad" min="140" max="255" step="1">
         </div>
-        <div class="nota">El motor y la velocidad de voz se aplican al reiniciar Viernes.</div>
+        <div class="nota">El motor y la velocidad de voz se aplican en la próxima respuesta.</div>
         <div class="fila" style="display:block;">
           <span>País / contexto para búsquedas</span>
           <input type="text" id="cfgPais" placeholder="colombia" style="max-width:none;width:100%;margin-top:6px;">
@@ -502,13 +523,29 @@
 
       <div class="grupo">
         <button class="btn-grab" id="cfgReset" style="width:100%;padding:9px;">Volver a los valores por defecto</button>
-        <div class="nota">No toca tu país/contexto de búsqueda. Los atajos y la voz se aplican al reiniciar.</div>
+        <div class="nota">No toca tu país/contexto de búsqueda. Los atajos se aplican al reiniciar.</div>
       </div>
 
     </div>
   </div>
 
+  <div id="historialPanel" hidden>
+    <header>
+      <div class="marca"><span class="rayo">🕘</span><span>Conversaciones</span></div>
+      <button class="cerrar" id="histCerrar" title="Cerrar" style="position:static;width:24px;height:24px;border:0;border-radius:8px;background:rgba(255,255,255,.06);color:var(--tenue);cursor:pointer;font-size:13px;">×</button>
+    </header>
+    <div class="cuerpo">
+      <button id="histNueva">＋ Nueva conversación</button>
+      <div id="histLista"></div>
+      <div class="nota">Se guarda todo en privado/chats. Viernes recuerda el hilo actual y lo corta solo por inactividad o tamaño.</div>
+    </div>
+  </div>
+
   <div class="ctrl">
+    <button id="historial" title="Conversaciones">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>
+      <svg class="pxi" viewBox="0 0 12 12" fill="currentColor" shape-rendering="crispEdges"><rect x="2" y="2" width="8" height="1"/><rect x="2" y="5" width="8" height="1"/><rect x="2" y="8" width="8" height="1"/></svg>
+    </button>
     <button id="cfg" title="Personalizar">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.2.63.77 1.06 1.51 1.09H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       <svg class="pxi" viewBox="0 0 12 12" fill="currentColor" shape-rendering="crispEdges"><rect x="5" y="1" width="2" height="2"/><rect x="5" y="9" width="2" height="2"/><rect x="1" y="5" width="2" height="2"/><rect x="9" y="5" width="2" height="2"/><rect x="2" y="2" width="2" height="2"/><rect x="8" y="2" width="2" height="2"/><rect x="2" y="8" width="2" height="2"/><rect x="8" y="8" width="2" height="2"/><rect x="4" y="4" width="4" height="4"/></svg>
@@ -526,6 +563,7 @@
   </div>
   <header class="pywebview-drag-region">
     <div class="marca"><span class="rayo">⚡</span><span>Viernes</span></div>
+    <div class="autor">by Juan José Vélez O.</div>
     <div class="estado" hidden><span class="dot" id="dot"></span><span id="estadoTxt"></span></div>
   </header>
 
@@ -597,6 +635,11 @@
     alFondo();
   };
 
+  window.vrnLimpiar = function(){
+    $msgs.innerHTML = '';
+    ultimoQuien = null;
+  };
+
   window.vrnSistema = function(texto){
     ultimoQuien = null;
     const s = document.createElement('div');
@@ -654,7 +697,6 @@
   window.vrnReactivar = function(){
     procesando = false;
     $btn.classList.remove('stop');
-    $texto.disabled = false;
     $texto.focus();
   };
 
@@ -667,13 +709,16 @@
     autoGrow();
     procesando = true;
     $btn.classList.add('stop');
-    $texto.disabled = true;
     apiCall('enviar', t);
   }
 
   $btn.addEventListener('click', enviar);
   $texto.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); enviar(); }
+    if (e.key === 'Enter' && !e.shiftKey){
+      e.preventDefault();
+      // mientras Viernes responde se puede seguir escribiendo, pero no enviar
+      if (!procesando) enviar();
+    }
   });
 
   function autoGrow(){
@@ -884,8 +929,14 @@
     apiCall('set_ajuste', 'saludo.al_iniciar', $cfgSaludo.checked));
   $cfgMotor.addEventListener('change', () =>
     apiCall('set_ajuste', 'tts.motor', $cfgMotor.value));
-  $cfgVelocidad.addEventListener('change', () =>
-    apiCall('set_ajuste', 'tts.piper_length_scale', parseFloat($cfgVelocidad.value)));
+  $cfgVelocidad.addEventListener('change', () => {
+    // un solo control para las dos velocidades: length_scale (Piper) y
+    // rate (edge). length_scale menor = más rápido; se mapea a un % de rate.
+    const ls = parseFloat($cfgVelocidad.value);
+    apiCall('set_ajuste', 'tts.piper_length_scale', ls);
+    const pct = Math.round((1.0 - ls) * 75);
+    apiCall('set_ajuste', 'tts.rate', (pct >= 0 ? '+' : '') + pct + '%');
+  });
   $cfgOpacidad.addEventListener('change', () =>
     apiCall('set_ajuste', 'personalizacion.opacidad_ventana', parseInt($cfgOpacidad.value, 10)));
   $cfgPais.addEventListener('change', () =>
@@ -923,6 +974,41 @@
   }
   $cfg.addEventListener('click', abrirPanel);
   document.getElementById('cfgCerrar').addEventListener('click', () => { $panel.hidden = true; });
+
+  // ---- panel de conversaciones ----
+  const $hist = document.getElementById('historialPanel');
+  const $histLista = document.getElementById('histLista');
+
+  function renderHist(items){
+    $histLista.innerHTML = '';
+    if (!items || !items.length){
+      $histLista.innerHTML = '<div class="nota">Todavía no hay conversaciones guardadas.</div>';
+      return;
+    }
+    for (const it of items){
+      const b = document.createElement('button');
+      b.className = 'conv-item';
+      const t = document.createElement('div'); t.className = 't'; t.textContent = it.titulo || '(sin título)';
+      const m = document.createElement('div'); m.className = 'm';
+      const f = it.fecha ? new Date(it.fecha * 1000).toLocaleString() : '';
+      m.textContent = f + (it.n_turnos ? '  ·  ' + it.n_turnos + (it.n_turnos === 1 ? ' turno' : ' turnos') : '');
+      b.append(t, m);
+      b.addEventListener('click', () => { apiCall('cargar_conversacion', it.id); $hist.hidden = true; });
+      $histLista.appendChild(b);
+    }
+  }
+
+  document.getElementById('historial').addEventListener('click', () => {
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.listar_conversaciones){
+      window.pywebview.api.listar_conversaciones().then(renderHist);
+    }
+    $hist.hidden = false;
+  });
+  document.getElementById('histCerrar').addEventListener('click', () => { $hist.hidden = true; });
+  document.getElementById('histNueva').addEventListener('click', () => {
+    apiCall('nueva_conversacion');
+    $hist.hidden = true;
+  });
 
   document.getElementById('cfgReset').addEventListener('click', () => {
     if (!confirm('¿Volver a los valores por defecto de estética, skills, atajos y voz?')) return;

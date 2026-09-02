@@ -7,12 +7,16 @@ devuelve el texto a decir en voz alta. Si el modelo ejecuta una tool y no
 agrega comentario propio (pasa seguido con acciones simples como abrir una
 app), cae al texto que devolvio la tool misma en vez de quedarse mudo."""
 
+import logging
 import re
 import threading
 
 from litert_lm import Backend, Engine, interfaces
 
 import config
+from core import memoria
+
+_LOG = logging.getLogger("agente.motor_llm")
 
 # Ruta al .litertlm y backend salen de config.json (ver config.example.json).
 MODEL_PATH = config.obtener("llm.model_path")
@@ -31,7 +35,21 @@ SYSTEM_MESSAGE = (
     "usar ninguna herramienta. Si no sabes algo actualizado (clima, "
     "noticias, informacion reciente) o el usuario pide buscar algo, usa "
     "buscar_en_internet en vez de inventar una respuesta. Solo usa "
-    "ChatGPT si el usuario lo nombra explicitamente."
+    "ChatGPT si el usuario lo nombra explicitamente. Tenes memoria de esta "
+    "conversacion: usa el contexto previo para resolver referencias como "
+    "'si', 'esa', 'la siguiente', 'lo que dijiste'."
+)
+
+# El resumidor es el mismo Gemma 4 E2B (modelo chico, resume con imprecisiones):
+# por eso se le pide poco y concreto, y motor_llm siempre deja los ultimos
+# turnos verbatim para que un resumen flojo no rompa las referencias cercanas.
+RESUMIDOR_SYSTEM = (
+    "Sos un compresor de conversaciones. Te paso un resumen previo (puede "
+    "estar vacio) y los turnos nuevos de una charla entre un usuario y su "
+    "asistente. Devolve UN solo parrafo en espanol, en tercera persona, que "
+    "actualice el resumen conservando datos concretos: nombres, numeros, "
+    "canciones, apps, decisiones tomadas y lo que quedo pendiente. No "
+    "inventes nada. No saludes ni expliques, solo el parrafo."
 )
 
 _engine = None
@@ -128,6 +146,30 @@ def _consumir_stream(conversacion, texto, al_oracion):
     return completo.strip()
 
 
+def _resumir(resumen_previo, turnos):
+    """Regenera el resumen de la conversacion con el mismo modelo. Se llama
+    con `_lock` ya tomado (desde ejecutar_turno). Devuelve el parrafo nuevo o
+    el resumen previo si algo falla (nunca revienta el turno)."""
+    if not turnos:
+        return resumen_previo
+    lineas = [f"Resumen previo: {resumen_previo or '(vacio)'}", "", "Turnos nuevos:"]
+    for t in turnos:
+        quien = "Usuario" if t["rol"] == "usuario" else "Asistente"
+        lineas.append(f"{quien}: {t['texto']}")
+    try:
+        conv = _engine.create_conversation(
+            system_message=RESUMIDOR_SYSTEM, automatic_tool_calling=False
+        )
+        respuesta = conv.send_message("\n".join(lineas))
+        nuevo = ""
+        for bloque in respuesta.get("content", []):
+            if isinstance(bloque, dict) and bloque.get("type") == "text":
+                nuevo += bloque.get("text", "")
+        return nuevo.strip() or resumen_previo
+    except Exception:
+        return resumen_previo
+
+
 def ejecutar_turno(texto, tools, al_oracion=None):
     """Manda `texto` al modelo con las `tools` (funciones Python, con type
     hints y docstring Args: para que litert-lm-api arme bien el schema).
@@ -142,10 +184,18 @@ def ejecutar_turno(texto, tools, al_oracion=None):
     global _engine
 
     registrador = _RegistradorTools()
+    memoria.rotar_si_corresponde()
+    previos = memoria.mensajes_previos()
+    if previos:
+        _LOG.info(
+            "Contexto: %d mensajes previos%s",
+            len(previos), " (incluye resumen)" if memoria.resumen_actual() else "",
+        )
     with _lock:
         if _engine is None:  # primer turno sin cargar() previo: se crea aca
             _engine = Engine(MODEL_PATH, backend=_backend())
         conversacion = _engine.create_conversation(
+            messages=previos or None,
             tools=tools,
             system_message=SYSTEM_MESSAGE,
             automatic_tool_calling=True,
@@ -168,5 +218,15 @@ def ejecutar_turno(texto, tools, al_oracion=None):
         texto_respuesta = str(registrador.ultimo_resultado)
         if al_oracion is not None:  # una tool sin comentario del modelo: decir su resultado
             al_oracion(texto_respuesta)
+
+    memoria.registrar(texto, texto_respuesta)
+    if memoria.necesita_resumen():
+        # Compresion progresiva: pasa cada ~ventana_turnos turnos y suma
+        # ~1-2s a ese turno puntual. Toma _lock de nuevo (se usa _engine).
+        _LOG.info("La conversacion supero la ventana: comprimiendo lo viejo en un resumen...")
+        with _lock:
+            memoria.aplicar_resumen(
+                _resumir(memoria.resumen_actual(), memoria.turnos_a_comprimir())
+            )
 
     return texto_respuesta, registrador.llamadas

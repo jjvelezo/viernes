@@ -1,176 +1,101 @@
 # Viernes
 
-**Viernes** es una **IA local con _tool calling_** para controlar una PC con
-Windows sin depender de la nube ni de suscripciones de pago. Se mantiene
-apretada una tecla, se habla; `faster-whisper` transcribe, un LLM que corre
-**en la propia máquina** (`Gemma 4 E2B` en GPU) decide si responde directo o
-si ejecuta una _skill_, y contesta en voz alta. También hay una ventana de
-chat para escribirle: va al mismo motor local, con las mismas skills.
+**IA local con _tool calling_ para manejar una PC con Windows por voz — sin nube, sin suscripciones.**
 
-La **skill de manos** (`mouse_gestual/`) fue lo primero que se construyó y
-de ahí nació el proyecto: una webcam + MediaPipe siguen ambas manos y con
-gestos simples se maneja el cursor real de Windows. Corre como proceso
-aparte y el asistente la enciende/apaga por voz — conceptualmente es una
-capacidad más de Viernes.
+<p>
+  <img alt="python 3.11" src="https://img.shields.io/badge/python-3.11-3776AB?logo=python&logoColor=white&labelColor=555">
+  <img alt="platform Windows 10" src="https://img.shields.io/badge/platform-Windows%2010-0078D6?logo=windows&logoColor=white&labelColor=555">
+  <img alt="LLM Gemma 4 E2B" src="https://img.shields.io/badge/LLM-Gemma%204%20E2B-4285F4?labelColor=555">
+  <img alt="STT faster-whisper" src="https://img.shields.io/badge/STT-faster--whisper-5A45FF?labelColor=555">
+  <img alt="privacy 100% local" src="https://img.shields.io/badge/privacy-100%25%20local-3FB950?labelColor=555">
+</p>
 
-> Asume **Windows 10** y una sola PC de usuario. No es multiplataforma.
-> Todo el código, los comentarios y los commits están en español, a propósito.
+Se mantiene apretada una tecla (F9) y se habla. `faster-whisper` transcribe, un
+LLM que corre **en la propia GPU** (`Gemma 4 E2B`) decide si responde directo o
+ejecuta una _skill_, y contesta en voz alta. También hay una ventana de chat para
+escribirle: mismo motor local, mismas skills, misma conversación.
 
-```
-viernes/
-├── agente/
-│   ├── main.py            # push-to-talk (F9) + bandeja + ventana de chat; orquesta el turno
-│   ├── config.py          # lee config.json (no secreto) y .env (credenciales)
-│   ├── core/
-│   │   ├── voz.py         # grabación (sounddevice) + STT (faster-whisper) + TTS (edge-tts)
-│   │   ├── motor_llm.py   # carga Gemma 4 E2B en GPU vía litert-lm-api, ejecuta el turno
-│   │   ├── chat_web.py    # ventana de chat (pywebview + WebView2); UI en chat_ui/ (temas: moderno / retro)
-│   │   └── logs.py        # log rotativo de cada turno (a privado/, no se sube)
-│   ├── skills/            # una capacidad = un módulo con TOOLS = [...]
-│   └── scripts/           # spotify_auth.py, abrir_por_palmada.py (auxiliares)
-├── mouse_gestual/         # skill de gestos: webcam + MediaPipe → cursor real (proceso aparte)
-├── requirements.txt · requirements-dev.txt · ruff.toml
-```
+> Asume **Windows 10** y una sola PC de usuario. Todo el código, los comentarios y
+> los commits están en español, a propósito.
+
+<p align="center">
+  <img src="docs/chat.png" alt="Ventana de chat, tema retro" width="380">
+  <img src="docs/historial.png" alt="Historial de conversaciones, tema moderno" width="380">
+</p>
+<p align="center"><sub>Tema <b>retro</b> (CRT ámbar) · historial de conversaciones en tema <b>moderno</b></sub></p>
 
 ---
+
+## Qué hace
+
+- **Voz push-to-talk (F9)** y **ventana de chat** — mismo motor, misma memoria.
+- **10 skills / 25 tools**: abrir apps y carpetas, volumen, Spotify (Premium),
+  búsqueda web, ChatGPT, cerrar/leer ventanas, hora, rutina de inicio y el
+  **mouse gestual**.
+- **Memoria conversacional**: recuerda el hilo actual (resumen + últimos turnos)
+  y lo corta solo por inactividad o tamaño.
+- **Todo offline salvo lo que pida internet**: STT, LLM y TTS (Piper) corren en
+  la máquina; solo Spotify, la búsqueda web y ChatGPT salen a la red.
 
 ## Cómo funciona
 
-**voz → Whisper → LLM local → ¿responde o llama una skill? → acción sobre
-Windows → respuesta hablada.** El mouse gestual sigue el mismo espíritu por
-su cuenta (**señal cruda del mundo real → interpretación barata y explícita
-→ acción vía `pywin32`**), pero sin pasar por el LLM.
-
 ```mermaid
 flowchart LR
-    subgraph Mouse gestual
-        A[Webcam] --> B[MediaPipe<br/>21 landmarks/mano]
-        B --> C[Reglas geométricas<br/>x,y solamente]
-        C --> D[Gesto + debounce]
-    end
-    subgraph Asistente
-        E[Micrófono / chat] --> F[Whisper<br/>faster-whisper]
-        F --> G[LLM local<br/>Gemma 4 E2B en GPU]
-        G --> H[Skill o respuesta]
-    end
-    D --> W[(Windows API<br/>pywin32)]
-    H --> W
-    W --> R[Cursor / ventanas /<br/>apps / volumen / voz]
+    E["Micrófono (F9)<br/>/ ventana de chat"] --> F[Whisper<br/>faster-whisper, CPU]
+    F --> G[LLM local<br/>Gemma 4 E2B en GPU]
+    G -->|responde| T[Piper / edge-tts<br/>voz]
+    G -->|llama una skill| S[Skill]
+    S --> W[(Windows API<br/>pywin32)]
+    S --> T
+    W --> R[Cursor · ventanas ·<br/>apps · volumen]
 ```
 
-### Ciclo de un comando de voz
+- **Modelo:** `Gemma 4 E2B` (variante litert-lm, cuantizada) — entra en los 4 GB
+  de VRAM de una GTX 1650. Runtime `litert-lm-api`, backend GPU (~1–2 s/comando).
+- **Tool calling automático:** cada skill es una función Python con _type hints_
+  y docstring `Args:`; `litert-lm-api` arma el schema y la ejecuta cuando el
+  modelo la llama.
+- **Memoria** (`core/memoria.py`): el motor no guarda estado entre turnos, así
+  que la conversación (resumen progresivo + ventana de turnos verbatim) se
+  reconstruye y se antepone en cada turno. Voz y chat comparten el mismo hilo.
 
-```mermaid
-sequenceDiagram
-    participant U as Usuario
-    participant K as Hotkey F9
-    participant V as core/voz.py
-    participant W as Whisper (CPU)
-    participant L as motor_llm (Gemma, GPU)
-    participant S as Skill
-    participant T as edge-tts + MCI
-
-    U->>K: mantiene F9 apretada
-    K->>V: graba mientras la tecla está abajo
-    U->>K: suelta F9
-    V->>W: audio float32 mono 16 kHz
-    W-->>L: texto transcripto
-    L->>L: ¿respondo directo o llamo una tool?
-    alt necesita una acción
-        L->>S: llamada a tool (con argumentos)
-        S-->>L: resultado (texto de confirmación)
-    end
-    L-->>T: texto final a decir
-    T-->>U: respuesta en voz alta
-    Note over U,K: apretar F9 mientras habla = "barge-in":<br/>corta el audio y arranca a grabar de nuevo
-```
-
-Estados del turno, para decidir qué hacer si se aprieta F9 antes de que el
-anterior termine: **idle** → **procesando** (transcribiendo/pensando, se
-ignora F9) → **hablando** (reproduciendo respuesta, F9 hace barge-in).
-
-### El motor LLM local
-
-- **Modelo:** `Gemma 4 E2B` (variante "litert-lm", cuantizada) — entra
-  cómodo en los 4 GB de VRAM de una GTX 1650.
-- **Runtime:** `litert-lm-api`, backend **GPU** (~1–2 s por comando; 5–9 s
-  en CPU).
-- **Tool calling automático:** las skills son funciones Python con _type
-  hints_ y docstring `Args:`; `litert-lm-api` arma el schema solo y ejecuta
-  la función cuando el modelo la llama. Un `ToolEventHandler` registra cada
-  llamada (para el log y para el _fallback_ de voz).
-- **Sin estado entre turnos:** cada comando es una conversación nueva (por
-  eso existe la skill `tiempo` — el modelo no tiene reloj).
-- Los turnos se serializan con un `Lock`: el motor se usa desde el
-  push-to-talk y desde la ventana de chat a la vez.
-
-Alternativas descartadas y umbrales calibrados a mano: en los docstrings de
-cada módulo (y en `CLAUDE.md`, local).
-
----
+Alternativas descartadas y umbrales calibrados a mano: en los docstrings de cada
+módulo.
 
 ## Skills
 
-Una skill es un módulo en `agente/skills/` que expone `TOOLS = [...]`;
-`skills/__init__.py` las junta en una lista para el motor. Agregar una
-capacidad = agregar un módulo.
+| Skill | Qué hace |
+|---|---|
+| **apps** | Abre aplicaciones instaladas (índice real de los `.lnk` del Menú Inicio, fuzzy-match) |
+| **carpetas** | Abre Escritorio/Documentos/Descargas y proyectos por nombre aproximado |
+| **volumen** | Volumen maestro: fijar %, subir, bajar, silenciar, consultar |
+| **ventanas** | Cierra / minimiza ventanas por título; si hay ambigüedad, pregunta |
+| **internet** | Búsqueda web con Tavily (respuesta ya redactada); sin key cae a ChatGPT |
+| **chatgpt** | Pregunta a ChatGPT vía navegador (solo si el usuario lo nombra) |
+| **spotify** | Reproduce canción/playlist/mood, siguiente/anterior, pausa (requiere Premium) |
+| **tiempo** | Hora y fecha actual |
+| **rutina** | "Modo trabajo": abre tus apps y pone tu playlist en aleatorio |
+| **manos_libres** | Enciende/apaga el mouse gestual (proceso aparte) |
 
-| Skill | Qué hace | Notas |
-|---|---|---|
-| **apps** | Abrir aplicaciones de escritorio | Índice real de lo instalado leyendo los `.lnk` del Menú Inicio y resolviéndolos con `WScript.Shell`. Fuzzy-match para nombres transcriptos. Sin shell (evita inyección) |
-| **volumen** | Volumen maestro: fijar %, subir, bajar, silenciar, consultar | `pycaw` → `AudioDevice.EndpointVolume` |
-| **internet** | Buscar info reciente (camino por defecto) | API de Tavily con `include_answer` (respuesta ya redactada — Gemma no resume). `TAVILY_API_KEY` en `.env`. Si falla o no hay key, cae a **chatgpt** |
-| **chatgpt** | Preguntar a ChatGPT (solo si el usuario lo nombra) | Playwright + perfil persistente de Chromium, `--start-minimized`. También es el fallback de **internet** |
-| **tiempo** | Hora y fecha actual | `datetime.now()` formateado en español |
-| **carpetas** | Abrir Escritorio/Documentos/Descargas y proyectos | Match por contención + fuzzy sobre `Documents/Proyectos/` |
-| **ventanas** | Cerrar / minimizar ventanas | `win32gui.EnumWindows` + búsqueda por título. Si hay ambigüedad, no cierra nada: pide aclarar |
-| **spotify** | Reproducir canción/playlist/mood, siguiente/anterior, pausa/reanudar | Web API de Spotify con `urllib` (transporte en `skills/_spotify_api.py`). Requiere **Premium** + `scripts/spotify_auth.py` una vez |
-| **manos_libres** | Activar / desactivar el mouse gestual | Lanza `mouse_gestual/main.py` como **proceso aparte** (`subprocess`) — no importa nada de esa carpeta, así que no puede tumbar al agente |
-| **rutina** | "Modo trabajo" / arranque de la jornada | Abre `rutina.apps` y pone `rutina.spotify_playlist_uri` en aleatorio. Con `rutina.al_iniciar: true` corre al arrancar, en paralelo con la carga de modelos; en el arranque automático la playlist solo suena dentro de `rutina.spotify_horario` |
+Agregar una capacidad = agregar un módulo en `agente/skills/` con `TOOLS = [...]`.
 
----
+## El mouse gestual
 
-## La skill de manos (`mouse_gestual/`)
+Una webcam + MediaPipe siguen ambas manos; con gestos simples (pellizco, puño,
+palma) se maneja el cursor real, se arrastran y redimensionan ventanas, se hace
+scroll y Aero Snap. Fue lo primero que se construyó y de ahí nació el proyecto;
+hoy es una skill más. Corre como proceso aparte y `agente/` no lo importa nunca.
 
-```mermaid
-flowchart TD
-    F[Frame de webcam<br/>volteado en espejo] --> M[HandLandmarker<br/>hasta 2 manos, 21 pts c/u]
-    M --> H["Corrección de lateralidad<br/>(dos manos juntas → orden en x)"]
-    H --> G["detectar_gesto() por mano<br/>PELLIZCO / PUÑO / PALMA_ABIERTA / NINGUNO"]
-    G --> DB["EstadoDebounce<br/>N frames iguales seguidos"]
-    DB --> SM[Máquina de estados en main.py]
-    SM --> S1[Suavizado de posición<br/>media móvil + exponencial / filtro 1€]
-    S1 --> OUT[win32api: mover cursor,<br/>mover/redimensionar ventana, scroll, cerrar]
-```
-
-Solo se usan las coordenadas **`x,y`** de los landmarks (el eje `z` de
-MediaPipe resultó demasiado ruidoso). Quedan dos primitivas: _distancia
-entre dos puntos_ y _¿está un dedo extendido?_ (`tip.y` vs `pip.y`).
+Detalle completo en [`mouse_gestual/README.md`](mouse_gestual/README.md).
 
 | Gesto | Acción |
 |---|---|
 | Pellizco corto (pulgar + índice) | Click izquierdo |
 | Pellizco sostenido, una mano | Arrastrar la ventana bajo el cursor |
-| Pellizco con **ambas** manos | Redimensionar (derecha = esquina sup. der., izquierda = inf. izq.) |
-| Puño sostenido mientras se arrastra | Cerrar la ventana (cuenta regresiva, cancelable abriendo la mano) |
-| Puño sin ventana agarrada | Scroll vertical, con inercia al soltar |
-| Llevar la ventana a un borde | Aero Snap reimplementado (arriba = maximizar, lados = media pantalla) |
-
-| Archivo | Qué es |
-|---|---|
-| `camara.py` | Cámara + overlay de FPS |
-| `landmarks.py` | + detección/dibujo de landmarks (MediaPipe). Módulo: `MODEL_PATH`, `dibujar_landmarks` |
-| `gestos.py` | Clasificación pura de gestos + `EstadoDebounce`. Módulo: `detectar_gesto`, `EstadoDebounce` |
-| `cursor.py` | Wrappers sobre `win32api`/`win32gui`, DPI-aware, multi-monitor, Aero Snap |
-| `main.py` | Máquina de estados por frame que ata todo — **el mouse gestual** |
-| `modelos/hand_landmarker.task` | Modelo de MediaPipe (ruta relativa a esta carpeta) |
-
-`main.py` **importa** de `landmarks`, `gestos` y `cursor` (son módulos): si
-cambiás sus funciones/constantes públicas, actualizá `main.py`. Nada de
-`agente/` toca esta carpeta. Los detalles frágiles (click vs. arrastre,
-cursor congelado en `PUÑO`, suavizado) están comentados en `mouse_gestual/main.py`.
-
----
+| Pellizco con **ambas** manos | Redimensionar |
+| Puño sostenido mientras se arrastra | Cerrar la ventana (cancelable) |
+| Puño sin ventana agarrada | Scroll vertical, con inercia |
+| Ventana contra un borde | Aero Snap (maximizar / media pantalla) |
 
 ## Instalación
 
@@ -179,122 +104,88 @@ Requiere **Windows 10** y **Python 3.11**.
 ```powershell
 python -m venv venv
 ./venv/Scripts/python.exe -m pip install -r requirements.txt
-./venv/Scripts/python.exe -m playwright install chromium   # para la skill chatgpt
-# voz local (offline): baja una voz de Piper (~60 MB, no va en el repo)
+./venv/Scripts/python.exe -m playwright install chromium   # skill chatgpt
+
+# voz local offline (~60 MB, no va en el repo):
 ./venv/Scripts/python.exe -m piper.download_voices es_MX-claude-high --data-dir privado/voz_piper
 ```
 
-Antes de la primera corrida, crear la config local (nada de esto se sube a git):
+Antes de la primera corrida (nada de esto se sube a git):
 
 ```powershell
-cp agente/config.example.json agente/config.json   # y editar model_path, etc.
-cp agente/.env.example        agente/.env           # solo si vas a usar Spotify / Tavily
+cp agente/config.example.json agente/config.json   # editar llm.model_path, etc.
+cp agente/.env.example        agente/.env           # solo para Spotify / Tavily
 ```
 
-- **`agente/config.json`** — ajustes **no secretos** de esta máquina: ruta
-  al `.litertlm`, backend (`gpu`/`cpu`), modelo de Whisper, voz de TTS,
-  tecla de push-to-talk, carpeta de proyectos, saludo de arranque, rutina
-  de inicio. `config.example.json` es la plantilla.
-- **`agente/.env`** — **solo credenciales**: `SPOTIFY_CLIENT_ID` /
-  `SPOTIFY_CLIENT_SECRET`, `TAVILY_API_KEY`. Formato mínimo `CLAVE=valor`,
-  una por línea. `.env.example` es la plantilla.
+- **`config.json`** — ajustes **no secretos** de la máquina: ruta al `.litertlm`,
+  backend (`gpu`/`cpu`), modelo de Whisper, voz, tecla de push-to-talk, memoria,
+  rutina de inicio. Plantilla: `config.example.json`.
+- **`.env`** — **solo credenciales**: `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`,
+  `TAVILY_API_KEY`. El resto del agente funciona sin esto.
 
----
+El modelo del LLM se consigue aparte (Hugging Face, `litert-community/gemma-4-E2B-it-litert-lm`)
+y su ruta va en `config.json`.
 
 ## Uso
 
-**Asistente:**
 ```powershell
-./venv/Scripts/python.exe agente/main.py
+./venv/Scripts/python.exe agente/main.py            # el asistente (F9 para hablar)
+./venv/Scripts/python.exe mouse_gestual/main.py     # el mouse gestual (q para salir)
 ```
-Mantener **F9** para hablar, o escribir en la ventana de chat (también tiene
-un botón de micrófono que hace lo mismo que F9). El ícono de la bandeja
-muestra el estado (gris = esperando, azul = grabando, naranja = procesando).
-Salir por el menú del ícono ("Salir").
 
-La ventana de chat tiene dos temas conmutables en caliente desde el botón de
-la cabecera: **moderno** (glass oscuro) y **retro** (terminal CRT ámbar). La
-elección se recuerda entre arranques; el default sale de `chat.tema` en
-`config.json`. También se puede fijar la ventana encima de todo (botón de
-chincheta).
+Mantené **F9** para hablar o escribí en la ventana de chat (tiene su propio botón
+de micrófono). El ícono de la bandeja muestra el estado (gris = esperando,
+azul = grabando, naranja = procesando). Se sale por el menú del ícono.
 
-El botón **⚙ Personalizar** abre un panel para ajustar sin tocar archivos:
-combinaciones de color y tamaño de texto, qué skills están activas, las teclas
-de push-to-talk y de palmada, motor y velocidad de la voz, opacidad de la
-ventana y el contexto de país para las búsquedas. Todo se guarda en
-`config.json`. La estética y la opacidad se aplican al instante; las skills en
-el próximo mensaje; los atajos y la voz al reiniciar Viernes.
+La ventana de chat tiene dos temas conmutables en caliente (**moderno** glass y
+**retro** CRT ámbar), un panel **⚙ Personalizar** que ajusta color, fuente, skills
+activas, atajos, voz y opacidad sin tocar archivos, y un historial 🕘 de
+conversaciones.
 
-**Mouse gestual** (proceso aparte; también lo lanza la skill `manos_libres`):
-```powershell
-./venv/Scripts/python.exe mouse_gestual/main.py
-```
-Cerrar: `q` con la ventana de OpenCV en foco. Cada submódulo corre solo
-como demo de su paso (`camara.py`, `gestos.py`, `cursor.py`).
+**Spotify** (una vez): `./venv/Scripts/python.exe agente/scripts/spotify_auth.py`.
 
-**Spotify** (una vez): `./venv/Scripts/python.exe agente/scripts/spotify_auth.py`
-— autoriza en el navegador y cachea el token en `agente/.spotify_token_cache`.
-
-**Abrir Viernes con teclas + doble palmada** (opcional):
-`agente/scripts/abrir_por_palmada.py` se deja corriendo (acceso directo al
-`.vbs` en `shell:startup`). En reposo solo engancha el teclado — el
-micrófono **no** se abre. Al apretar `palmada.tecla` (`Ctrl+Shift+F8` por
-defecto) abre el micro; con dos palmadas seguidas lanza el agente. El hook
-de teclado no llega si la ventana con foco es de administrador (UIPI, igual
-que el F9 de Viernes).
-
----
+**Abrir por teclas + doble palmada** (opcional): dejar corriendo
+`agente/scripts/abrir_por_palmada.py` (acceso directo al `.vbs` en `shell:startup`).
 
 ## Desarrollo
 
 ```powershell
 ./venv/Scripts/python.exe -m pip install -r requirements-dev.txt
-
 ./venv/Scripts/python.exe -m ruff check .     # lint
 ./venv/Scripts/python.exe -m ruff format .    # formato
 ```
 
 No hay tests, build step ni argumentos de CLI.
 
----
-
-## Tecnología
+## Stack
 
 | Área | Herramienta |
 |---|---|
 | STT | `faster-whisper` (`small`, CPU, `int8`) — backend `ctranslate2`, sin torch |
 | LLM | `litert-lm-api` + `Gemma 4 E2B` en GPU |
-| TTS | `piper` (local/offline, voz `es_MX-claude-high` en CPU) con `edge-tts` (`es-MX-DaliaNeural`) de respaldo; frases cortas cacheadas; reproducido con MCI (`winmm.dll`) |
-| Grabación / hotkey | `sounddevice` (InputStream continuo), `keyboard` (hook global) |
-| Bandeja | `pystray` + `Pillow` (íconos generados en memoria) |
-| Ventana de chat | `pywebview` + `pythonnet` sobre el WebView2 de Windows; UI HTML/CSS en `core/chat_ui/` |
-| Visión (gestos) | `mediapipe` (HandLandmarker), `opencv-python` |
-| Windows | `pywin32` (`win32api`/`win32gui`/`win32com`), `pycaw` + `comtypes` (volumen) |
-| ChatGPT / búsqueda | `playwright` (Chromium), Tavily vía `urllib` |
-
----
+| TTS | `piper` (local, voz `es_MX-claude-high`) con `edge-tts` de respaldo; MCI para reproducir |
+| Voz / hotkey | `sounddevice`, `keyboard` (hook global) |
+| Bandeja / chat | `pystray` + `Pillow`; `pywebview` + `pythonnet` sobre WebView2 |
+| Visión | `mediapipe` (HandLandmarker), `opencv-python` |
+| Windows | `pywin32`, `pycaw` + `comtypes` (volumen) |
+| Web | `playwright` (Chromium), Tavily vía `urllib` |
 
 ## Hardware de referencia
 
 Todo se probó y ajustó en esta máquina:
 
-- **CPU:** Intel Core i5-10300H · **GPU:** NVIDIA GTX 1650, **4 GB VRAM** · **RAM:** ~16 GB
-- **OS:** Windows 10 IoT Enterprise LTSC 2021 (Windows 10, no 11 — sin voz on-device de Copilot+/NPU)
-- El _delegate_ GPU de MediaPipe está **deshabilitado en el build pip de
-  Windows**: HandLandmarker corre **solo en CPU** (~80 fps sin manos en
-  frame — no es el cuello de botella; lo era la captura de cámara).
-- Con 4 GB de VRAM entra cómodo un modelo de 3–4B; los de 7–8B corren con
-  offload parcial a CPU.
-
----
+- **CPU** i5-10300H · **GPU** GTX 1650, **4 GB VRAM** · **~16 GB RAM**
+- **OS** Windows 10 IoT Enterprise LTSC 2021 (no 11, sin NPU / Copilot+)
+- Con 4 GB de VRAM entra cómodo un modelo de 3–4B; los de 7–8B con offload parcial.
+- El _delegate_ GPU de MediaPipe está deshabilitado en el build pip de Windows:
+  HandLandmarker corre en CPU (~80 fps, no es el cuello de botella).
 
 ## Estado
 
 - ✅ **Mouse gestual** — completo y estable.
-- ✅ **Asistente de voz + chat con LLM local** — pipeline funcionando, 10
-  skills activas (25 tools).
+- ✅ **Asistente de voz + chat con LLM local** — pipeline funcionando.
 - 🔜 De acá en adelante: sumar skills nuevas.
 
-`privado/` y `prototipos/` son carpetas locales (gitignored): notas,
-modelos descargados, perfiles de navegador, logs, y los scripts de prueba
-(`faseN_*.py`) con los que se fue armando el asistente — nada de eso se sube.
+`privado/` y `prototipos/` son carpetas locales (gitignored): notas, modelos
+descargados, perfiles de navegador, logs y los scripts de prueba con los que se
+fue armando el asistente.

@@ -34,7 +34,7 @@ from PIL import Image, ImageDraw
 
 import config
 import skills
-from core import chat_web, logs, motor_llm
+from core import chat_web, logs, memoria, motor_llm
 from core.voz import (
     EstadoGrabacion,
     barge_in_pedido,
@@ -245,6 +245,7 @@ def _arrancar(cambiar_estado, mostrar_en_chat, api):
     modelo = cargar_modelo_stt()
     LOG.info("Cargando modelo LLM (Gemma 4 E2B, GPU)...")
     motor_llm.cargar()
+    memoria.iniciar()
     LOG.info('Listo. Mantene "%s" apretada para hablar (revisa el icono en la bandeja).', TECLA_PTT.upper())
 
     global _STREAM_AUDIO

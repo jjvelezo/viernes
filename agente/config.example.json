@@ -20,6 +20,12 @@
   "chat": {
     "tema": "moderno"
   },
+  "memoria": {
+    "activa": true,
+    "ventana_turnos": 6,
+    "inactividad_min": 15,
+    "max_turnos": 30
+  },
   "personalizacion": {
     "paleta": "azul",
     "tam_fuente": "normal",
