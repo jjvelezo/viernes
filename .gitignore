@@ -29,9 +29,10 @@ config.json
 # --- Notas y archivos locales, no se suben ---
 privado/
 
-# --- Prototipos ("fases" de prueba): se conservan en disco como archivo
-#     histórico, pero no van al repo (lo inflan y nada los usa). Ver
-#     docs/decisiones.md para el historial de qué era cada fase. ---
+# --- Prototipos ("fases" de prueba): cada capacidad se armó primero como
+#     script suelto y se reescribió dentro de agente/. Se conservan en disco
+#     como archivo histórico, pero no van al repo (lo inflan y nada los
+#     importa). Ver docs/decisiones.md. ---
 prototipos/
 
 # --- Editores / configuración local ---

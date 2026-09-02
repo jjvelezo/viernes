@@ -21,8 +21,6 @@ import win32gui
 from mediapipe.tasks.python import vision
 from mediapipe.tasks.python.core.base_options import BaseOptions
 
-from landmarks import MODEL_PATH, HAND_CONNECTIONS, dibujar_landmarks
-from gestos import FRAMES_DEBOUNCE, EstadoDebounce, detectar_gesto
 from cursor import (
     MANO_CURSOR,
     aplicar_snap_si_corresponde,
@@ -37,6 +35,8 @@ from cursor import (
     redimensionar_ventana,
     restaurar_ventana,
 )
+from gestos import FRAMES_DEBOUNCE, EstadoDebounce, detectar_gesto
+from landmarks import MODEL_PATH, dibujar_landmarks
 
 INDICE_PUNTA = 8  # landmark de la punta del dedo índice
 MANOS = ("Left", "Right")
@@ -288,7 +288,7 @@ def main():
                 detectada = {mano: False for mano in MANOS}
                 gestos_actuales = {mano: "NINGUNO" for mano in MANOS}
 
-                manos_detectadas = list(zip(result.hand_landmarks, result.handedness))
+                manos_detectadas = list(zip(result.hand_landmarks, result.handedness, strict=True))
 
                 # El clasificador Left/Right de MediaPipe se confunde bastante cuando
                 # ve las DOS manos a la vez (cerca, cruzadas, en poses simétricas), y

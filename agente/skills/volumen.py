@@ -5,7 +5,6 @@ confirmacion para que el asistente lo diga en voz alta."""
 import comtypes
 from pycaw.pycaw import AudioUtilities
 
-
 # Se cachea el endpoint de audio: obtenerlo (AudioUtilities.GetSpeakers())
 # activa COM y enumera dispositivos cada vez, y "subir/bajar volumen" lo
 # necesitaba varias veces por llamada. Si el dispositivo de audio por defecto

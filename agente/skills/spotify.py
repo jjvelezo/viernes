@@ -15,7 +15,7 @@ por eso antes de reproducir se abre la pagina del track/playlist en el
 navegador por defecto (asume que el usuario ya esta logueado en Spotify
 ahi) y se espera un momento. La app de escritorio de Spotify no siempre
 tiene un .lnk estandar en el Menu Inicio, asi que el navegador es el
-camino confiable. Por que tanta gimnasia: CLAUDE.md."""
+camino confiable. Por que tanta gimnasia: docs/decisiones.md."""
 
 import difflib
 import random
@@ -28,6 +28,7 @@ import win32con
 import win32gui
 
 import config
+
 from ._spotify_api import _api, _buscar, _obtener_token, _uri_a_url_web, _uri_playlist
 
 ESPERA_DISPOSITIVO_S = 6  # segundos de espera tras abrir el reproductor web antes de mandar la orden
@@ -83,6 +84,20 @@ def _pantalla_secundaria():
     return None
 
 
+def _ventanas_visibles_con_titulo(clave):
+    """[hwnd] de las ventanas visibles cuyo titulo contiene `clave` (ya en
+    minusculas)."""
+    encontradas = []
+
+    def _cb(hwnd, _extra):
+        if win32gui.IsWindowVisible(hwnd) and clave in win32gui.GetWindowText(hwnd).lower():
+            encontradas.append(hwnd)
+        return True
+
+    win32gui.EnumWindows(_cb, None)
+    return encontradas
+
+
 def _mover_ventana_a(rect, titulo_contiene, intentos=16, espera=0.5):
     """Espera a que aparezca una ventana visible cuyo titulo contenga
     `titulo_contiene` y la mueve/maximiza en `rect`. Para mandar el
@@ -90,14 +105,7 @@ def _mover_ventana_a(rect, titulo_contiene, intentos=16, espera=0.5):
     x, y, ancho, alto = rect
     clave = titulo_contiene.lower()
     for _ in range(intentos):
-        encontradas = []
-
-        def _cb(hwnd, _extra):
-            if win32gui.IsWindowVisible(hwnd) and clave in win32gui.GetWindowText(hwnd).lower():
-                encontradas.append(hwnd)
-            return True
-
-        win32gui.EnumWindows(_cb, None)
+        encontradas = _ventanas_visibles_con_titulo(clave)
         if encontradas:
             hwnd = encontradas[0]
             try:

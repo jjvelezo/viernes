@@ -64,7 +64,7 @@ def main():
 
                 h, w, _ = frame.shape
 
-                for hand_landmarks, handedness in zip(result.hand_landmarks, result.handedness):
+                for hand_landmarks, handedness in zip(result.hand_landmarks, result.handedness, strict=True):
                     dibujar_landmarks(frame, hand_landmarks, w, h)
 
                     label = handedness[0].category_name  # "Left" / "Right"

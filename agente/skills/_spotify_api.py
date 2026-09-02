@@ -4,7 +4,7 @@ para poder testearlo aislado. La skill (skills/spotify.py) usa estas
 funciones; el flujo de autorizacion inicial esta en scripts/spotify_auth.py.
 
 Detalles de por que la reproduccion necesita tanta gimnasia (dispositivo
-activo, transferencia explicita, limit>=3 en las busquedas): CLAUDE.md.
+activo, transferencia explicita, limit>=3 en las busquedas): docs/decisiones.md.
 """
 
 import base64

@@ -1,7 +1,7 @@
 """Skill: cerrar/minimizar ventanas. Usa win32gui, mismo tipo de llamadas
 que ya usa mouse_gestual/cursor.py para el mouse gestual (agente/ no lo
-importa -- se reescribe la parte minima que hace falta; ver CLAUDE.md
-sobre el principio de aislamiento).
+importa -- se reescribe la parte minima que hace falta; ver
+docs/decisiones.md sobre el principio de aislamiento).
 
 cerrar_ventana_activa() cierra lo que tenga el foco de Windows en ese
 instante -- eso NO es necesariamente la app que el usuario acaba de

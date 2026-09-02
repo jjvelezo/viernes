@@ -59,8 +59,8 @@ flowchart LR
   que la conversación (resumen progresivo + ventana de turnos verbatim) se
   reconstruye y se antepone en cada turno. Voz y chat comparten el mismo hilo.
 
-Alternativas descartadas y umbrales calibrados a mano: en los docstrings de cada
-módulo.
+Alternativas descartadas, trampas y umbrales calibrados a mano:
+[`docs/decisiones.md`](docs/decisiones.md) y los docstrings de cada módulo.
 
 ## Skills
 
@@ -142,7 +142,10 @@ La ventana de chat tiene dos temas conmutables en caliente (**moderno** glass y
 activas, atajos, voz y opacidad sin tocar archivos, y un historial 🕘 de
 conversaciones.
 
-**Spotify** (una vez): `./venv/Scripts/python.exe agente/scripts/spotify_auth.py`.
+**Spotify** (una vez, requiere Premium): creá una app en el
+[Developer Dashboard](https://developer.spotify.com/dashboard) con Redirect URI
+`http://127.0.0.1:8888/callback`, poné su Client ID/Secret en `agente/.env`, y
+corré `./venv/Scripts/python.exe agente/scripts/spotify_auth.py`.
 
 **Abrir por teclas + doble palmada** (opcional): dejar corriendo
 `agente/scripts/abrir_por_palmada.py` (acceso directo al `.vbs` en `shell:startup`).

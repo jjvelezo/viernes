@@ -13,7 +13,7 @@ headless=True NO funciona: Cloudflare detecta el modo headless real de
 Chromium y sirve "Just a moment...". La ventana fuera de pantalla tampoco:
 Chromium la trata como "en segundo plano" y frena el render en tiempo real
 de chatgpt.com. Lo que funciona es "--start-minimized". Detalle completo de
-selectores y trampas de extraccion: CLAUDE.md."""
+selectores y trampas de extraccion: docs/decisiones.md."""
 
 import atexit
 import re

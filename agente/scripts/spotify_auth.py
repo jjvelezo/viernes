@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Autorizacion OAuth de Spotify -- correr UNA sola vez (o cuando el
-refresh_token deje de servir). Reusa una app de Spotify Developer ya
-registrada (el modo Development de Spotify permite reusar una app entre
-proyectos propios sin crear una nueva); el CLIENT_ID/SECRET salen de
-agente/.env.
+refresh_token deje de servir).
 
-Abre el navegador para que el usuario autorice, y guarda el token en
+Antes hay que crear una app en el Spotify Developer Dashboard
+(https://developer.spotify.com/dashboard), agregarle como Redirect URI
+http://127.0.0.1:8888/callback, y poner su Client ID / Secret en
+agente/.env (ver .env.example). La cuenta tiene que ser Premium.
+
+Este script abre el navegador para que autorices, y guarda el token en
 agente/.spotify_token_cache (gitignored) para que skills/spotify.py lo
 use despues sin pedir login de nuevo."""
 
@@ -42,7 +44,7 @@ class _ManejadorCallback(http.server.BaseHTTPRequestHandler):
             _codigo_auth = params["code"][0]
             self.send_response(200)
             self.end_headers()
-            self.wfile.write("<h2>Autorizado. Ya podes cerrar esta ventana.</h2>".encode("utf-8"))
+            self.wfile.write(b"<h2>Autorizado. Ya podes cerrar esta ventana.</h2>")
         else:
             self.send_response(400)
             self.end_headers()

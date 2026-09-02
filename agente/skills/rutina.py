@@ -23,6 +23,7 @@ import time
 from pathlib import Path
 
 import config
+
 from . import apps as _apps
 from . import spotify as _spotify
 

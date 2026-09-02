@@ -3,7 +3,7 @@
 Patron ya validado en un prototipo previo (sd.InputStream + callback,
 WhisperModel "small" en CPU, edge-tts + MCI para la respuesta hablada) y
 reescrito aca. Historial de voces de TTS probadas y por que el mp3 se
-reproduce con MCI y no con "play wait": CLAUDE.md."""
+reproduce con MCI y no con "play wait": docs/decisiones.md."""
 
 import asyncio
 import ctypes
@@ -53,7 +53,7 @@ PROMPT_INICIAL = (
 #   edge  -> `tts.rate` ("+15%", "-10%"...). El panel del chat mueve las dos
 #            con un solo control.
 def _voz_tts():
-    return config.obtener("tts.voice", "es-MX-DaliaNeural")  # voces probadas: CLAUDE.md
+    return config.obtener("tts.voice", "es-MX-DaliaNeural")  # voces probadas: docs/decisiones.md
 
 
 def _rate_tts():
@@ -310,7 +310,7 @@ def _generar_audio(texto):
 
 
 def _clave_cache(texto):
-    material = f"{_motor_tts()}|{_voz_tts()}|{_rate_tts()}|{_piper_length_scale()}|{texto}".encode("utf-8")
+    material = f"{_motor_tts()}|{_voz_tts()}|{_rate_tts()}|{_piper_length_scale()}|{texto}".encode()
     return hashlib.sha1(material).hexdigest()
 
 
