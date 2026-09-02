@@ -153,7 +153,7 @@ class _Api:
         self._hwnd = 0
         self._fijado = False
         self._gen = 0
-        self._voz = True
+        self._voz = bool(config.obtener("personalizacion.voz_por_defecto", True))
         # los engancha main._arrancar cuando el push-to-talk está listo:
         # son las MISMAS funciones que dispara F9 (apretar / soltar).
         self._mic_iniciar = None
@@ -175,8 +175,84 @@ class _Api:
 
     def set_tema(self, nombre):
         """La página ya cambió el look sola; acá solo se persiste la elección
-        para el próximo arranque."""
+        para el próximo arranque (dotfile rápido + config.json)."""
         _guardar_tema(nombre)
+        if nombre in _TEMAS:
+            try:
+                config.escribir("chat.tema", nombre)
+            except Exception:
+                _LOG.debug("no se pudo guardar chat.tema", exc_info=True)
+
+    # ---- panel de personalización ----
+    def get_ajustes(self):
+        """Estado actual de todo lo que el panel de ajustes puede tocar."""
+        return {
+            "tema": _tema_inicial(),
+            "paleta": config.obtener("personalizacion.paleta", "azul"),
+            "tam_fuente": config.obtener("personalizacion.tam_fuente", "normal"),
+            "opacidad": int(config.obtener("personalizacion.opacidad_ventana", ALPHA_VENTANA)),
+            "skills": skills.catalogo(),
+            "ptt": config.obtener("push_to_talk.key", "f9"),
+            "palmada": config.obtener("palmada.tecla", "ctrl+shift+f8"),
+            "tts_motor": config.obtener("tts.motor", "auto"),
+            "tts_velocidad": float(config.obtener("tts.piper_length_scale", 0.8)),
+            "voz_por_defecto": self._voz,
+            "saludo_al_iniciar": bool(config.obtener("saludo.al_iniciar", True)),
+            "internet_pais": config.obtener("internet.pais", ""),
+            "internet_contexto": config.obtener("internet.contexto_usuario", ""),
+        }
+
+    def set_ajuste(self, clave, valor):
+        """Persiste un ajuste en config.json. Lo que se puede aplicar en
+        caliente lo hace la página (estética) o acá (opacidad de ventana);
+        atajos y voz recién toman efecto al reiniciar Viernes."""
+        try:
+            config.escribir(clave, valor)
+        except Exception:
+            _LOG.exception("no se pudo guardar el ajuste %s", clave)
+            return
+        if clave == "personalizacion.opacidad_ventana" and self._hwnd:
+            try:
+                _translucidez(self._hwnd, int(valor))
+            except Exception:
+                _LOG.debug("no se pudo aplicar la opacidad", exc_info=True)
+
+    # claves que el botón "volver a valores por defecto" restablece (los
+    # valores salen de config.example.json). internet.* queda afuera a
+    # propósito: es dato personal del usuario, no una preferencia de look.
+    _CLAVES_DEFECTO = (
+        "chat.tema",
+        "personalizacion.paleta",
+        "personalizacion.tam_fuente",
+        "personalizacion.opacidad_ventana",
+        "personalizacion.voz_por_defecto",
+        "personalizacion.skills",
+        "push_to_talk.key",
+        "palmada.tecla",
+        "tts.motor",
+        "tts.piper_length_scale",
+        "saludo.al_iniciar",
+    )
+
+    def restablecer_ajustes(self):
+        """Reescribe en config.json los valores por defecto (de
+        config.example.json) de todo lo que toca el panel, y devuelve el
+        estado nuevo para que la página lo re-aplique."""
+        pares = {c: config.ejemplo(c) for c in self._CLAVES_DEFECTO}
+        pares = {c: v for c, v in pares.items() if v is not None}
+        try:
+            config.escribir_varios(pares)
+        except Exception:
+            _LOG.exception("no se pudo restablecer la configuración")
+        _guardar_tema(pares.get("chat.tema", "moderno"))
+        if self._hwnd:
+            try:
+                _translucidez(self._hwnd, int(pares.get(
+                    "personalizacion.opacidad_ventana", ALPHA_VENTANA)))
+            except Exception:
+                pass
+        self._voz = bool(config.obtener("personalizacion.voz_por_defecto", True))
+        return self.get_ajustes()
 
     def ready(self):
         self.set_estado_ptt("inactivo")
@@ -229,12 +305,12 @@ class _Api:
         try:
             self._window.evaluate_js(f"{fn}({_js_args(args)})")
         except Exception:
-            pass
+            _LOG.debug("evaluate_js fallo para %s", fn, exc_info=True)
 
     def _trabajar(self, texto, gen):
         _LOG.info('Chat: "%s"', texto)
         try:
-            respuesta, llamadas = motor_llm.ejecutar_turno(texto, skills.TOOLS)
+            respuesta, llamadas = motor_llm.ejecutar_turno(texto, skills.activas())
             for ll in llamadas:
                 _LOG.info("  Tool: %s(%s) -> %s", ll["tool"], ll["args"], ll["resultado"])
         except Exception as error:  # que un fallo no deje el chat trabado
@@ -296,7 +372,7 @@ def crear():
         if hwnd:
             hecho["v"] = True
             api._hwnd = hwnd
-            _translucidez(hwnd)
+            _translucidez(hwnd, int(config.obtener("personalizacion.opacidad_ventana", ALPHA_VENTANA)))
             if api._fijado:  # por si la página pidió pin antes de tener hwnd
                 _fijar_encima(hwnd, True)
 

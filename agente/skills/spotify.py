@@ -209,11 +209,25 @@ def reproducir_cancion(nombre: str) -> str:
     return f'Reproduciendo "{cancion["name"]}"' + (f" de {artistas}." if artistas else ".")
 
 
-def _todas_mis_playlists(token):
+_CACHE_PLAYLISTS_TTL_S = 300  # 5 min: reproducir varias playlists seguidas no re-descarga toda la biblioteca
+_cache_playlists = {"data": None, "hora": 0.0}
+
+
+def _todas_mis_playlists(token, usar_cache=True):
     """Todas las playlists de la biblioteca del usuario (creadas + seguidas),
     paginando -- no solo las primeras 50. Whisper mete cualquier nombre y la
     biblioteca real puede pasar de 50, asi que quedarse en la primera pagina
-    hacia que "no la encuentro" playlists que si estaban."""
+    hacia que "no la encuentro" playlists que si estaban.
+
+    Se cachea el resultado unos minutos: pedir varias playlists seguidas es
+    comun y re-paginar toda la biblioteca cada vez son varias llamadas HTTP.
+    usar_cache=False fuerza traerlas frescas (playlist recien creada)."""
+    if (
+        usar_cache
+        and _cache_playlists["data"] is not None
+        and time.time() - _cache_playlists["hora"] < _CACHE_PLAYLISTS_TTL_S
+    ):
+        return _cache_playlists["data"]
     todas, offset = [], 0
     while True:
         pagina = _api("GET", "/me/playlists", token, parametros={"limit": 50, "offset": offset})
@@ -223,6 +237,8 @@ def _todas_mis_playlists(token):
         if not pagina.get("next"):
             break
         offset += 50
+    _cache_playlists["data"] = todas
+    _cache_playlists["hora"] = time.time()
     return todas
 
 
@@ -251,6 +267,9 @@ def reproducir_playlist(nombre: str) -> str:
     token = _obtener_token()
 
     coincidencia = _elegir_playlist(_todas_mis_playlists(token), nombre)
+    if coincidencia is None and _cache_playlists["data"] is not None:
+        # quiza es una playlist nueva creada despues del ultimo cacheo
+        coincidencia = _elegir_playlist(_todas_mis_playlists(token, usar_cache=False), nombre)
     if coincidencia is None:
         raise ValueError(f'No encontre ninguna playlist tuya parecida a "{nombre}".')
 

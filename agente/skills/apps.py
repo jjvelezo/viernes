@@ -11,9 +11,15 @@ ruta que se usa para abrir la app y para el fuzzy-match de nombres
 transcriptos por voz."""
 
 import difflib
+import json
+import logging
 import os
+import threading
+from pathlib import Path
 
 import win32com.client
+
+_LOG = logging.getLogger("agente.apps")
 
 APPS_CONOCIDAS = {
     # Solo utilidades del sistema, casi nunca tienen un .lnk lindo en el
@@ -35,7 +41,15 @@ CARPETAS_MENU_INICIO = (
     os.path.join(os.environ.get("APPDATA", ""), "Microsoft", "Windows", "Start Menu", "Programs"),
 )
 
-_indice_instaladas = None  # cache: {nombre_normalizado: ruta_ejecutable}, se arma la primera vez que hace falta
+_indice_instaladas = None  # cache en memoria: {nombre_normalizado: ruta_ejecutable}
+_lock_indice = threading.Lock()
+
+# El escaneo del Menu Inicio (os.walk + resolver cada .lnk por COM) tarda
+# varios segundos con muchas apps instaladas. Se hace UNA sola vez y se guarda
+# en disco; los arranques siguientes lo leen de ahi al instante. Para
+# reindexar tras instalar/desinstalar algo: la tool reindexar_aplicaciones()
+# o borrar este archivo a mano.
+_CACHE_INDICE = Path(__file__).resolve().parent.parent.parent / "privado" / "apps_index.json"
 
 
 def _construir_indice_instaladas():
@@ -65,11 +79,45 @@ def _construir_indice_instaladas():
     return indice
 
 
-def _obtener_indice_instaladas():
+def _leer_cache_indice():
+    """Lee el indice de disco, descartando entradas cuyo .exe ya no exista
+    (app desinstalada desde el ultimo escaneo). None si no hay cache util."""
+    try:
+        datos = json.loads(_CACHE_INDICE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    vigentes = {n: r for n, r in datos.items() if isinstance(r, str) and os.path.isfile(r)}
+    return vigentes or None
+
+
+def _guardar_cache_indice(indice):
+    try:
+        _CACHE_INDICE.parent.mkdir(parents=True, exist_ok=True)
+        _CACHE_INDICE.write_text(json.dumps(indice, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError as error:
+        _LOG.warning("No se pudo guardar el indice de apps (%s)", error)
+
+
+def _obtener_indice_instaladas(forzar=False):
     global _indice_instaladas
-    if _indice_instaladas is None:
+    with _lock_indice:
+        if _indice_instaladas is not None and not forzar:
+            return _indice_instaladas
+        if not forzar:
+            cacheado = _leer_cache_indice()
+            if cacheado:
+                _indice_instaladas = cacheado
+                return _indice_instaladas
         _indice_instaladas = _construir_indice_instaladas()
-    return _indice_instaladas
+        _guardar_cache_indice(_indice_instaladas)
+        return _indice_instaladas
+
+
+def precargar():
+    """Arma (o carga de disco) el indice de apps. main.py lo llama en un hilo
+    al arrancar, en paralelo con la carga de modelos, para que el primer
+    'abri X' de la sesion no pague el escaneo del Menu Inicio."""
+    _obtener_indice_instaladas()
 
 
 def _resolver_ejecutable(clave):
@@ -111,4 +159,12 @@ def abrir_app(nombre: str) -> str:
     return f"Abriendo {nombre}."
 
 
-TOOLS = [abrir_app]
+def reindexar_aplicaciones() -> str:
+    """Vuelve a escanear las aplicaciones instaladas en la PC. Usar cuando el
+    usuario instalo o desinstalo un programa y quiere que Viernes lo tenga en
+    cuenta ("actualiza la lista de aplicaciones", "reescanea las apps")."""
+    indice = _obtener_indice_instaladas(forzar=True)
+    return f"Listo, reindexe {len(indice)} aplicaciones."
+
+
+TOOLS = [abrir_app, reindexar_aplicaciones]

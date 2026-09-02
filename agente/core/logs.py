@@ -5,6 +5,7 @@ la carpeta de cosas locales que no se suben a git (los logs van a tener
 transcripciones de voz, no deberian subirse)."""
 
 import logging
+import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -28,8 +29,13 @@ def configurar():
     manejador_archivo.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
     logger.addHandler(manejador_archivo)
 
-    manejador_consola = logging.StreamHandler()
-    manejador_consola.setFormatter(logging.Formatter("%(message)s"))
-    logger.addHandler(manejador_consola)
+    # Consola solo si hay una de verdad (se corrio a mano para depurar). En el
+    # arranque normal (bandeja / doble palmada) corre bajo pythonw.exe, sin
+    # consola: escribir ahi es trabajo perdido.
+    flujo = sys.stderr
+    if flujo is not None and hasattr(flujo, "isatty") and flujo.isatty():
+        manejador_consola = logging.StreamHandler()
+        manejador_consola.setFormatter(logging.Formatter("%(message)s"))
+        logger.addHandler(manejador_consola)
 
     return logger

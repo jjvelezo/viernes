@@ -180,6 +180,8 @@ Requiere **Windows 10** y **Python 3.11**.
 python -m venv venv
 ./venv/Scripts/python.exe -m pip install -r requirements.txt
 ./venv/Scripts/python.exe -m playwright install chromium   # para la skill chatgpt
+# voz local (offline): baja una voz de Piper (~60 MB, no va en el repo)
+./venv/Scripts/python.exe -m piper.download_voices es_MX-claude-high --data-dir privado/voz_piper
 ```
 
 Antes de la primera corrida, crear la config local (nada de esto se sube a git):
@@ -215,6 +217,13 @@ la cabecera: **moderno** (glass oscuro) y **retro** (terminal CRT ámbar). La
 elección se recuerda entre arranques; el default sale de `chat.tema` en
 `config.json`. También se puede fijar la ventana encima de todo (botón de
 chincheta).
+
+El botón **⚙ Personalizar** abre un panel para ajustar sin tocar archivos:
+combinaciones de color y tamaño de texto, qué skills están activas, las teclas
+de push-to-talk y de palmada, motor y velocidad de la voz, opacidad de la
+ventana y el contexto de país para las búsquedas. Todo se guarda en
+`config.json`. La estética y la opacidad se aplican al instante; las skills en
+el próximo mensaje; los atajos y la voz al reiniciar Viernes.
 
 **Mouse gestual** (proceso aparte; también lo lanza la skill `manos_libres`):
 ```powershell
@@ -255,7 +264,7 @@ No hay tests, build step ni argumentos de CLI.
 |---|---|
 | STT | `faster-whisper` (`small`, CPU, `int8`) — backend `ctranslate2`, sin torch |
 | LLM | `litert-lm-api` + `Gemma 4 E2B` en GPU |
-| TTS | `edge-tts` (`es-MX-DaliaNeural`, `+15%`), reproducido con MCI (`winmm.dll`) |
+| TTS | `piper` (local/offline, voz `es_MX-claude-high` en CPU) con `edge-tts` (`es-MX-DaliaNeural`) de respaldo; frases cortas cacheadas; reproducido con MCI (`winmm.dll`) |
 | Grabación / hotkey | `sounddevice` (InputStream continuo), `keyboard` (hook global) |
 | Bandeja | `pystray` + `Pillow` (íconos generados en memoria) |
 | Ventana de chat | `pywebview` + `pythonnet` sobre el WebView2 de Windows; UI HTML/CSS en `core/chat_ui/` |
@@ -283,7 +292,7 @@ Todo se probó y ajustó en esta máquina:
 
 - ✅ **Mouse gestual** — completo y estable.
 - ✅ **Asistente de voz + chat con LLM local** — pipeline funcionando, 10
-  skills activas (24 tools).
+  skills activas (25 tools).
 - 🔜 De acá en adelante: sumar skills nuevas.
 
 `privado/` y `prototipos/` son carpetas locales (gitignored): notas,

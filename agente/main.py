@@ -21,6 +21,7 @@ mouse_gestual/ (skill de gestos, proceso aparte) NO se importa nunca aca
 -- lo que se necesitaba de ahi se reescribio, no se importo -- asi agente/
 puede moverse a su propio repo con git mv sin arrastrar nada."""
 
+import queue
 import random
 import sys
 import threading
@@ -34,7 +35,17 @@ from PIL import Image, ImageDraw
 import config
 import skills
 from core import chat_web, logs, motor_llm
-from core.voz import EstadoGrabacion, cargar_modelo_stt, detener_reproduccion, hablar, iniciar_stream, transcribir
+from core.voz import (
+    EstadoGrabacion,
+    barge_in_pedido,
+    cargar_modelo_stt,
+    detener_reproduccion,
+    hablar,
+    iniciar_stream,
+    precargar_tts,
+    reiniciar_barge_in,
+    transcribir,
+)
 
 TECLA_PTT = config.obtener("push_to_talk.key", "f9")
 
@@ -61,6 +72,40 @@ ESTADO_PROCESANDO = "procesando"
 ESTADO_HABLANDO = "hablando"
 _estado_turno = {"valor": ESTADO_IDLE}
 
+# Todo acceso al estado del turno pasa por este candado: lo tocan tres hilos
+# (hook de teclado, hilo de procesamiento, hilo del saludo) y sin serializar
+# habia una carrera fina en el barge-in (un hilo viejo reseteaba a idle
+# despues de que el nuevo turno ya habia puesto "procesando").
+_estado_lock = threading.Lock()
+
+# Numero de turno. Sube cada vez que arranca uno nuevo. Un hilo de
+# procesamiento viejo compara su numero contra este antes de resetear el
+# estado: si ya hay un turno mas nuevo, no lo pisa.
+_turno_gen = {"n": 0}
+
+
+def _set_estado(nuevo):
+    with _estado_lock:
+        _estado_turno["valor"] = nuevo
+
+
+def _set_estado_si(actual, nuevo):
+    """Cambia el estado a `nuevo` solo si ahora mismo es `actual` (compare-and-set
+    atomico)."""
+    with _estado_lock:
+        if _estado_turno["valor"] == actual:
+            _estado_turno["valor"] = nuevo
+
+
+def _estado_actual():
+    with _estado_lock:
+        return _estado_turno["valor"]
+
+
+def _es_turno_actual(gen):
+    with _estado_lock:
+        return gen == _turno_gen["n"]
+
 
 def _icono_circulo(color):
     imagen = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
@@ -80,6 +125,40 @@ _ICONOS_ESTADO = {
 }
 
 
+class _LocutorStreaming:
+    """Dice cada oración apenas el modelo la genera, en un hilo aparte, así la
+    voz y la generación del LLM se solapan (activado con llm.voz_streaming en
+    config.json). Si apretás F9 mientras habla (barge-in), deja de decir lo
+    que quede en cola."""
+
+    _FIN = object()
+
+    def __init__(self):
+        reiniciar_barge_in()  # arrancamos un turno nuevo; hablar() no la va a limpiar
+        self._cola = queue.Queue()
+        self._hilo = threading.Thread(target=self._bucle, daemon=True)
+        self._hilo.start()
+
+    def _bucle(self):
+        while True:
+            item = self._cola.get()
+            if item is self._FIN:
+                return
+            if not barge_in_pedido():
+                hablar(item, reiniciar_cancelacion=False)
+
+    def decir(self, oracion):
+        """Callback para motor_llm.ejecutar_turno(al_oracion=...). Devuelve
+        False si hubo barge-in, para que el motor corte la generación."""
+        self._cola.put(oracion)
+        return not barge_in_pedido()
+
+    def terminar(self):
+        """Espera a que se termine de decir lo que quede en cola."""
+        self._cola.put(self._FIN)
+        self._hilo.join()
+
+
 def _procesar(audio, modelo, mostrar_en_chat=None):
     texto = transcribir(audio, modelo)
     if not texto:
@@ -89,12 +168,21 @@ def _procesar(audio, modelo, mostrar_en_chat=None):
     LOG.info('Comando: "%s"', texto)
     if mostrar_en_chat:
         mostrar_en_chat("usuario", texto)  # el turno de voz también se ve en el chat
+
+    locutor = _LocutorStreaming() if config.obtener("llm.voz_streaming", False) else None
+    if locutor:
+        _set_estado(ESTADO_HABLANDO)  # ya se empieza a hablar mientras el LLM genera
+
     t0 = time.time()
     try:
-        respuesta, llamadas = motor_llm.ejecutar_turno(texto, skills.TOOLS)
+        respuesta, llamadas = motor_llm.ejecutar_turno(
+            texto, skills.activas(), al_oracion=locutor.decir if locutor else None
+        )
     except Exception:  # una skill puede fallar (app no encontrada, etc.)
         LOG.exception("Error ejecutando el turno")
-        _estado_turno["valor"] = ESTADO_HABLANDO
+        if locutor:
+            locutor.terminar()
+        _set_estado(ESTADO_HABLANDO)
         if mostrar_en_chat:
             mostrar_en_chat("asistente", "Hubo un error, no pude hacerlo.")
         hablar("Hubo un error, no pude hacerlo.")
@@ -105,10 +193,13 @@ def _procesar(audio, modelo, mostrar_en_chat=None):
         LOG.info("  Tool: %s(%s) -> %s", llamada["tool"], llamada["args"], llamada["resultado"])
     LOG.info('Respuesta (%.2fs): "%s"', duracion, respuesta)
 
-    if respuesta:
-        if mostrar_en_chat:
-            mostrar_en_chat("asistente", respuesta)
-        _estado_turno["valor"] = ESTADO_HABLANDO
+    if respuesta and mostrar_en_chat:
+        mostrar_en_chat("asistente", respuesta)
+
+    if locutor:
+        locutor.terminar()  # el texto ya se fue diciendo por oraciones
+    elif respuesta:
+        _set_estado(ESTADO_HABLANDO)
         hablar(respuesta)
 
 
@@ -127,15 +218,16 @@ def _saludar():
     apenas aparece el icono, EN PARALELO a la carga de los modelos -- si
     no, el saludo salia recien despues de cargar Gemma (10-30s en GPU).
     Por eso no usa el LLM aca."""
-    _estado_turno["valor"] = ESTADO_HABLANDO
+    if not config.obtener("saludo.al_iniciar", True):
+        return
+    _set_estado(ESTADO_HABLANDO)
     try:
         frases = config.obtener("saludo.frases") or ["A sus órdenes."]
         hablar(f"{_franja_horaria()} señor. {random.choice(frases)}")
     except Exception:
         LOG.exception("Fallo el saludo")
     finally:
-        if _estado_turno["valor"] == ESTADO_HABLANDO:
-            _estado_turno["valor"] = ESTADO_IDLE
+        _set_estado_si(ESTADO_HABLANDO, ESTADO_IDLE)
 
 
 def _arrancar(cambiar_estado, mostrar_en_chat, api):
@@ -145,6 +237,9 @@ def _arrancar(cambiar_estado, mostrar_en_chat, api):
     ventana; se llama desde el hilo del hook de teclado (evaluate_js de
     pywebview es thread-safe, no hace falta marshalling). `api` se usa para
     engancharle al botón de micrófono del chat el mismo flujo que F9."""
+
+    # La voz (Piper) se carga en paralelo con Whisper/Gemma.
+    threading.Thread(target=precargar_tts, daemon=True).start()
 
     LOG.info("Cargando modelo STT...")
     modelo = cargar_modelo_stt()
@@ -161,23 +256,24 @@ def _arrancar(cambiar_estado, mostrar_en_chat, api):
     def al_presionar(_evento):
         if tecla_abajo["activa"]:
             return  # repeticion del SO mientras se mantiene apretada
-        if _estado_turno["valor"] == ESTADO_PROCESANDO:
+        est = _estado_actual()
+        if est == ESTADO_PROCESANDO:
             return  # transcribiendo/pensando: no se interrumpe
-        if _estado_turno["valor"] == ESTADO_HABLANDO:
+        if est == ESTADO_HABLANDO:
             detener_reproduccion()  # barge-in: cortar la respuesta en seco
         tecla_abajo["activa"] = True
         estado.iniciar()
         cambiar_estado("escuchando")
         LOG.info("Escuchando...")
 
-    def procesar_en_hilo_aparte(audio):
+    def procesar_en_hilo_aparte(audio, gen):
         try:
             _procesar(audio, modelo, mostrar_en_chat)
         finally:
-            # Si ya arranco una grabacion nueva (barge-in mientras esta
-            # funcion segui corriendo), no pisar ese estado/icono.
-            if not estado.grabando:
-                _estado_turno["valor"] = ESTADO_IDLE
+            # Solo resetear si sigue siendo el turno mas nuevo y no arranco
+            # otra grabacion (barge-in mientras esta funcion seguia corriendo).
+            if _es_turno_actual(gen) and not estado.grabando:
+                _set_estado(ESTADO_IDLE)
                 cambiar_estado("inactivo")
 
     def al_soltar(_evento):
@@ -185,12 +281,15 @@ def _arrancar(cambiar_estado, mostrar_en_chat, api):
             return
         tecla_abajo["activa"] = False
         audio = estado.detener()
-        _estado_turno["valor"] = ESTADO_PROCESANDO
+        with _estado_lock:
+            _turno_gen["n"] += 1
+            gen = _turno_gen["n"]
+            _estado_turno["valor"] = ESTADO_PROCESANDO
         cambiar_estado("procesando")
         # Despachar a un hilo aparte para no bloquear el hilo del hook de
         # teclado (Windows puede desenganchar un hook que tarda demasiado en
         # responder).
-        threading.Thread(target=procesar_en_hilo_aparte, args=(audio,), daemon=True).start()
+        threading.Thread(target=procesar_en_hilo_aparte, args=(audio, gen), daemon=True).start()
 
     keyboard.on_press_key(TECLA_PTT, al_presionar)
     keyboard.on_release_key(TECLA_PTT, al_soltar)
@@ -220,6 +319,9 @@ def main():
     # (edge-tts, abrir apps y Spotify no dependen de Whisper/Gemma) -- asi
     # abrir Viernes no se siente lento.
     threading.Thread(target=_saludar, daemon=True).start()
+    # Indexar las apps instaladas ya, en paralelo con la carga de modelos, para
+    # que el primer "abri X" de la sesion no espere el escaneo del Menu Inicio.
+    threading.Thread(target=skills.apps.precargar, daemon=True).start()
     if config.obtener("rutina.al_iniciar", True):
         threading.Thread(target=skills.rutina.ejecutar_al_inicio, daemon=True).start()
 

@@ -7,7 +7,6 @@ módulo. El `main()` de este archivo es solo una demo standalone del paso
 (cámara + overlay), no lo usa nada más."""
 
 import math
-import os
 import sys
 import time
 
@@ -16,19 +15,9 @@ import mediapipe as mp
 from mediapipe.tasks.python import vision
 from mediapipe.tasks.python.core.base_options import BaseOptions
 
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "modelos", "hand_landmarker.task")
-
-LABELS_ES = {"Left": "Mano izquierda", "Right": "Mano derecha"}
-
-# Conexiones entre landmarks para dibujar el esqueleto de la mano
-HAND_CONNECTIONS = [
-    (0, 1), (1, 2), (2, 3), (3, 4),          # pulgar
-    (0, 5), (5, 6), (6, 7), (7, 8),          # índice
-    (5, 9), (9, 10), (10, 11), (11, 12),     # medio
-    (9, 13), (13, 14), (14, 15), (15, 16),   # anular
-    (13, 17), (17, 18), (18, 19), (19, 20),  # meñique
-    (0, 17),                                  # base de la palma
-]
+# MODEL_PATH, HAND_CONNECTIONS y dibujar_landmarks viven en landmarks.py
+# (fuente unica); acá se importan para la demo standalone de este archivo.
+from landmarks import HAND_CONNECTIONS, LABELS_ES, MODEL_PATH, dibujar_landmarks  # noqa: F401
 
 FRAMES_DEBOUNCE = 8    # frames consecutivos necesarios para confirmar un gesto
 UMBRAL_PELLIZCO = 0.35  # distancia pulgar-índice / tamaño de mano, por debajo = pellizco
@@ -40,15 +29,6 @@ DEDOS_TIP_PIP = {
     "ring": (16, 14),
     "pinky": (20, 18),
 }
-
-
-def dibujar_landmarks(frame, hand_landmarks, w, h):
-    puntos = [(int(lm.x * w), int(lm.y * h)) for lm in hand_landmarks]
-
-    for a, b in HAND_CONNECTIONS:
-        cv2.line(frame, puntos[a], puntos[b], (255, 255, 255), 2)
-    for x, y in puntos:
-        cv2.circle(frame, (x, y), 4, (0, 0, 255), -1)
 
 
 def distancia(p1, p2):

@@ -13,6 +13,11 @@ sounddevice==0.5.6
 faster-whisper==1.2.1
 edge-tts==7.2.8
 numpy==2.4.6
+# TTS local/offline (motor por defecto). El modelo de voz (.onnx) NO va en el
+# repo: se baja una vez con
+#   ./venv/Scripts/python.exe -m piper.download_voices es_MX-claude-high --data-dir privado/voz_piper
+# edge-tts queda como respaldo automatico (config tts.motor).
+piper-tts==1.7.0
 
 # --- Asistente: LLM local ---
 litert-lm-api==0.16.1

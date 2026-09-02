@@ -1,20 +1,31 @@
 {
   "llm": {
     "model_path": "C:/ruta/a/tu/modelo/gemma-4-E2B-it.litertlm",
-    "backend": "gpu"
+    "backend": "gpu",
+    "voz_streaming": false
   },
   "stt": {
     "model": "small"
   },
   "tts": {
+    "motor": "auto",
     "voice": "es-MX-DaliaNeural",
-    "rate": "+15%"
+    "rate": "+15%",
+    "piper_model": "",
+    "piper_length_scale": 0.8
   },
   "push_to_talk": {
     "key": "f9"
   },
   "chat": {
     "tema": "moderno"
+  },
+  "personalizacion": {
+    "paleta": "azul",
+    "tam_fuente": "normal",
+    "opacidad_ventana": 232,
+    "voz_por_defecto": true,
+    "skills": {}
   },
   "carpetas": {
     "proyectos": "~/Documents/Proyectos"
@@ -42,6 +53,7 @@
     "max_gap_seconds": 0.8
   },
   "saludo": {
+    "al_iniciar": true,
     "frases": [
       "A sus órdenes.",
       "¿En qué puedo ayudarle?",

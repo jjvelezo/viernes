@@ -7,6 +7,8 @@ reproduce con MCI y no con "play wait": CLAUDE.md."""
 
 import asyncio
 import ctypes
+import hashlib
+import logging
 import tempfile
 import threading
 import time
@@ -18,6 +20,8 @@ import sounddevice as sd
 from faster_whisper import WhisperModel
 
 import config
+
+_LOG = logging.getLogger("agente.voz")
 
 MUESTREO_HZ = 16000
 MODELO_STT = config.obtener("stt.model", "small")
@@ -35,6 +39,44 @@ PROMPT_INICIAL = (
 
 VOZ_TTS = config.obtener("tts.voice", "es-MX-DaliaNeural")  # historial de voces probadas: CLAUDE.md
 RATE_TTS = config.obtener("tts.rate", "+15%")
+
+# Motor de TTS:
+#   "auto"  -> Piper (local, offline) si hay modelo; si no, edge-tts.
+#   "piper" -> siempre Piper (si falla la sintesis, cae a edge igual).
+#   "edge"  -> siempre edge-tts (voz "Dalia" de Azure, necesita internet).
+# Piper corre en CPU (~2x tiempo real con el modelo "high"), no pelea con
+# Gemma por la GPU, y funciona sin conexion. edge-tts suena un poco mejor
+# pero depende de la nube de Microsoft. Ver CLAUDE.md.
+MOTOR_TTS = str(config.obtener("tts.motor", "auto")).lower()
+
+# Velocidad de la voz de Piper. Es el "length_scale" del modelo: MENOR = MAS
+# RAPIDO (0.8 ~= 15% mas rapido que el default 1.0). No es lineal: bajar de
+# ~0.7 empieza a sonar atropellado.
+PIPER_LENGTH_SCALE = float(config.obtener("tts.piper_length_scale", 0.8))
+
+_CARPETA_VOZ_PIPER = Path(__file__).resolve().parent.parent.parent / "privado" / "voz_piper"
+
+
+def _ruta_modelo_piper():
+    """Ruta al .onnx de Piper: la de config si esta, si no el primer .onnx
+    dentro de privado/voz_piper/. None si no hay ninguno."""
+    configurada = config.obtener("tts.piper_model")
+    if configurada:
+        p = Path(configurada)
+        return p if p.exists() else None
+    if _CARPETA_VOZ_PIPER.is_dir():
+        modelos = sorted(_CARPETA_VOZ_PIPER.glob("*.onnx"))
+        if modelos:
+            return modelos[0]
+    return None
+
+
+# Cache de frases ya sintetizadas (saludos, "listo", confirmaciones de
+# volumen...). Se guarda el audio la primera vez y se reproduce de disco las
+# siguientes -> instantaneo y sin depender de internet. Solo frases cortas:
+# las respuestas largas rara vez se repiten palabra por palabra.
+_CACHE_TTS = Path(__file__).resolve().parent.parent.parent / "privado" / "tts_cache"
+_LARGO_MAX_CACHE = 140
 
 
 class EstadoGrabacion:
@@ -117,17 +159,18 @@ ALIAS_MCI = "voz_agente"
 _cancelado = threading.Event()
 
 
-def _reproducir_mp3(ruta):
-    """Reproduce un mp3 con el driver MCI de Windows -- sin dependencias
-    nuevas ademas de edge-tts, que no sabe decodificar/reproducir audio.
+def _reproducir_audio(ruta):
+    """Reproduce un mp3 o wav con el driver MCI de Windows.
 
     Ojo: NO se usa "play ... wait". Ese bloqueo no se corta de forma
     confiable cuando otro hilo manda "stop" sobre el mismo alias (MCI se
     queda pegado). En vez de eso se lanza el play sin esperar y se sondea
     el estado cada 50ms, saliendo apenas termina o apenas se pide un
     barge-in (_cancelado) -- asi la voz se calla en ~50ms, no al final."""
+    ruta = Path(ruta)
+    tipo = "waveaudio" if ruta.suffix.lower() == ".wav" else "mpegvideo"
     mci = ctypes.windll.winmm.mciSendStringW
-    mci(f'open "{ruta}" type mpegvideo alias {ALIAS_MCI}', None, 0, None)
+    mci(f'open "{ruta}" type {tipo} alias {ALIAS_MCI}', None, 0, None)
     mci(f"play {ALIAS_MCI}", None, 0, None)
     buffer = ctypes.create_unicode_buffer(32)
     while not _cancelado.is_set():
@@ -137,6 +180,19 @@ def _reproducir_mp3(ruta):
         time.sleep(0.05)
     mci(f"stop {ALIAS_MCI}", None, 0, None)
     mci(f"close {ALIAS_MCI}", None, 0, None)
+
+
+def reiniciar_barge_in():
+    """Limpia la marca de barge-in. La usa el modo de voz por streaming
+    (main._LocutorStreaming) al arrancar un turno nuevo, ya que va a llamar
+    a hablar() con reiniciar_cancelacion=False."""
+    _cancelado.clear()
+
+
+def barge_in_pedido():
+    """True si alguien pidio cortar la voz (apreto F9 mientras el agente
+    hablaba)."""
+    return _cancelado.is_set()
 
 
 def detener_reproduccion():
@@ -150,15 +206,12 @@ def detener_reproduccion():
     mci(f"close {ALIAS_MCI}", None, 0, None)
 
 
-def _generar_mp3(texto, ruta_destino):
-    """Corre la generacion de audio (asyncio) en un hilo nuevo y aislado.
-    Necesario porque si el turno uso preguntar_internet (Playwright) antes
-    de llegar aca, el hilo que procesa el turno puede quedar con el manejo
-    interno de asyncio "contaminado" por Playwright, y un asyncio.run()
-    directo en ese mismo hilo revienta con RuntimeError ("cannot be called
-    from a running event loop") -- visto en la practica. Un hilo nuevo
-    arranca siempre con un estado de asyncio limpio, sin depender de
-    entender el detalle exacto de que deja mal configurado Playwright."""
+def _generar_mp3_edge(texto, ruta_destino):
+    """Genera el mp3 con edge-tts. Corre la generacion (asyncio) en un hilo
+    nuevo y aislado: si el turno uso preguntar_a_chatgpt (Playwright) antes,
+    el hilo del turno puede quedar con el asyncio interno "contaminado" y un
+    asyncio.run() directo revienta con RuntimeError -- visto en la practica.
+    Un hilo nuevo arranca siempre con asyncio limpio."""
 
     def _tarea():
         comunicador = edge_tts.Communicate(texto, VOZ_TTS, rate=RATE_TTS)
@@ -169,17 +222,131 @@ def _generar_mp3(texto, ruta_destino):
     hilo.join()
 
 
-def hablar(texto):
-    """Convierte `texto` a voz (edge-tts) y lo reproduce. Genera un mp3
-    temporal y lo borra al terminar. Si llega un barge-in
-    (detener_reproduccion) mientras se genera el audio, no llega a sonar."""
-    _cancelado.clear()
-    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as temporal:
-        ruta_temp = Path(temporal.name)
+_piper_voz = None
+_piper_lock = threading.Lock()
+_piper_no_disponible = False  # se marca si fallo la carga, para no reintentar cada vez
+
+
+def _cargar_piper():
+    """Carga la voz de Piper una sola vez (thread-safe). None si no hay
+    modelo o si la carga falla."""
+    global _piper_voz, _piper_no_disponible
+    if _piper_voz is not None:
+        return _piper_voz
+    if _piper_no_disponible or MOTOR_TTS == "edge":
+        return None
+    with _piper_lock:
+        if _piper_voz is not None:
+            return _piper_voz
+        ruta = _ruta_modelo_piper()
+        if ruta is None:
+            _piper_no_disponible = True
+            if MOTOR_TTS == "piper":
+                _LOG.warning("tts.motor=piper pero no hay modelo en %s -> uso edge-tts", _CARPETA_VOZ_PIPER)
+            return None
+        try:
+            from piper import PiperVoice
+
+            _piper_voz = PiperVoice.load(str(ruta))
+            _LOG.info("Voz Piper cargada: %s", ruta.name)
+        except Exception:
+            _LOG.exception("No se pudo cargar Piper -> uso edge-tts")
+            _piper_no_disponible = True
+        return _piper_voz
+
+
+def precargar_tts():
+    """Carga la voz de Piper por adelantado (la llama main.py en un hilo al
+    arrancar, junto con Whisper y Gemma) para que la primera respuesta no
+    pague los ~2s de carga del modelo."""
+    _cargar_piper()
+
+
+def _generar_wav_piper(texto, ruta_destino):
+    import wave
+
+    voz = _cargar_piper()
+    if voz is None:
+        return False
     try:
-        _generar_mp3(texto, ruta_temp)
+        from piper import SynthesisConfig
+
+        cfg = SynthesisConfig(length_scale=PIPER_LENGTH_SCALE)
+        with wave.open(str(ruta_destino), "wb") as wav:
+            voz.synthesize_wav(texto, wav, syn_config=cfg)
+        return True
+    except Exception:
+        _LOG.exception("Fallo la sintesis con Piper -> uso edge-tts")
+        return False
+
+
+def _generar_audio(texto):
+    """Sintetiza `texto` a un archivo temporal y devuelve su ruta (.wav de
+    Piper o .mp3 de edge-tts). El caller lo borra al terminar."""
+    usar_piper = MOTOR_TTS in ("auto", "piper")
+    if usar_piper:
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            ruta = Path(tmp.name)
+        if _generar_wav_piper(texto, ruta):
+            return ruta
+        ruta.unlink(missing_ok=True)  # cae a edge-tts
+    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+        ruta = Path(tmp.name)
+    _generar_mp3_edge(texto, ruta)
+    return ruta
+
+
+def _clave_cache(texto):
+    material = f"{MOTOR_TTS}|{VOZ_TTS}|{RATE_TTS}|{PIPER_LENGTH_SCALE}|{texto}".encode("utf-8")
+    return hashlib.sha1(material).hexdigest()
+
+
+def hablar(texto, reiniciar_cancelacion=True):
+    """Convierte `texto` a voz y lo reproduce. Si llega un barge-in
+    (detener_reproduccion) mientras se genera o se reproduce el audio, se
+    corta y no llega a pisar al usuario.
+
+    Las frases cortas se cachean en disco (privado/tts_cache/): la primera
+    vez se sintetizan, las siguientes se reproducen directo -> instantaneo y
+    sin internet.
+
+    reiniciar_cancelacion=False: no limpia la marca de barge-in al arrancar.
+    Lo usa el modo streaming, que dice varias oraciones seguidas con la misma
+    marca -- si cada llamada la limpiara, un barge-in entre oraciones se
+    perderia."""
+    if reiniciar_cancelacion:
+        _cancelado.clear()
+
+    texto = (texto or "").strip()
+    if not texto:
+        return
+
+    # --- cache de frases cortas ---
+    cacheable = len(texto) <= _LARGO_MAX_CACHE
+    ruta_cache = None
+    if cacheable:
+        _CACHE_TTS.mkdir(parents=True, exist_ok=True)
+        clave = _clave_cache(texto)
+        for ext in (".wav", ".mp3"):
+            candidata = _CACHE_TTS / f"{clave}{ext}"
+            if candidata.exists():
+                if not _cancelado.is_set():
+                    _reproducir_audio(candidata)
+                return
+        ruta_cache = _CACHE_TTS / clave  # sin extension todavia; se define al generar
+
+    ruta_audio = _generar_audio(texto)
+    try:
         if _cancelado.is_set():
             return  # el usuario ya empezo a hablar: no pisar con la voz
-        _reproducir_mp3(ruta_temp)
+        if ruta_cache is not None:
+            try:
+                destino = ruta_cache.with_suffix(ruta_audio.suffix)
+                ruta_audio.replace(destino)
+                ruta_audio = destino
+            except OSError:
+                pass  # si no se pudo cachear, se reproduce el temporal igual
+        _reproducir_audio(ruta_audio)
     finally:
-        ruta_temp.unlink(missing_ok=True)
+        if ruta_cache is None or ruta_audio.parent != _CACHE_TTS:
+            Path(ruta_audio).unlink(missing_ok=True)

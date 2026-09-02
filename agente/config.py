@@ -12,6 +12,7 @@ ejemplo sin riesgo, .env nunca. Ver README."""
 
 import json
 import os
+import threading
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent
@@ -21,6 +22,10 @@ _RUTA_ENV = RAIZ / ".env"
 
 _config = None
 _env = None
+
+# Serializa las escrituras a config.json (el panel de personalizacion de la
+# ventana de chat escribe desde el hilo de pywebview mientras otros hilos leen).
+_lock = threading.Lock()
 
 
 def _cargar_config():
@@ -48,6 +53,51 @@ def obtener(ruta, defecto=None):
     if isinstance(actual, str) and actual.startswith("~"):
         return os.path.expanduser(actual)
     return actual
+
+
+def escribir(ruta, valor):
+    """Guarda un valor en config.json por ruta con puntos, creando los dicts
+    intermedios que falten. Reescribe el archivo entero (indentado, con acentos)
+    y actualiza el cache en memoria. Lo usa el panel de personalizacion del chat.
+
+    escribir("personalizacion.paleta", "verde")
+    escribir("push_to_talk.key", "f8")
+    """
+    escribir_varios({ruta: valor})
+
+
+def escribir_varios(pares):
+    """Como escribir() pero para varias claves de una, reescribiendo el
+    archivo una sola vez. `pares` es {ruta_con_puntos: valor}."""
+    with _lock:
+        cfg = _cargar_config()
+        for ruta, valor in pares.items():
+            partes = ruta.split(".")
+            actual = cfg
+            for parte in partes[:-1]:
+                siguiente = actual.get(parte)
+                if not isinstance(siguiente, dict):
+                    siguiente = {}
+                    actual[parte] = siguiente
+                actual = siguiente
+            actual[partes[-1]] = valor
+        _RUTA_CONFIG.write_text(
+            json.dumps(cfg, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
+
+
+def ejemplo(ruta, defecto=None):
+    """Valor de config.example.json (la plantilla) por ruta con puntos. Se usa
+    para el boton 'volver a los valores por defecto' del panel de chat."""
+    try:
+        datos = json.loads(_RUTA_EJEMPLO.read_text(encoding="utf-8"))
+    except Exception:
+        return defecto
+    for parte in ruta.split("."):
+        if not isinstance(datos, dict) or parte not in datos:
+            return defecto
+        datos = datos[parte]
+    return datos
 
 
 def _cargar_env():

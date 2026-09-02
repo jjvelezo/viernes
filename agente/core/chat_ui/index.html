@@ -175,6 +175,80 @@
   .sw input:checked + span{ background:var(--verde); }
   .sw input:checked + span::before{ transform:translateX(16px); }
 
+  /* ---------- panel de personalización ---------- */
+  #ajustes{
+    position:absolute; inset:0; z-index:30;
+    background:var(--bg);
+    display:flex; flex-direction:column;
+    animation:aparece .16s ease;
+  }
+  #ajustes[hidden]{ display:none; }   /* si no, el display:flex de arriba lo pisa */
+  #ajustes header{ flex-direction:row; align-items:center; justify-content:space-between; }
+  #ajustes .cuerpo{ flex:1; overflow-y:auto; padding:14px 16px 20px; }
+  #ajustes .cuerpo::-webkit-scrollbar,
+  #ajustes textarea::-webkit-scrollbar{ width:8px; }
+  #ajustes .cuerpo::-webkit-scrollbar-thumb,
+  #ajustes textarea::-webkit-scrollbar-thumb{ background:rgba(255,255,255,.16); border-radius:8px; border:2px solid transparent; background-clip:content-box; }
+  #ajustes .cuerpo::-webkit-scrollbar-track,
+  #ajustes textarea::-webkit-scrollbar-track{ background:transparent; }
+  #ajustes textarea.ctx{ resize:none; }
+  .grupo{ margin-bottom:18px; }
+  .grupo > h3{
+    font-size:11px; font-weight:700; letter-spacing:.6px; text-transform:uppercase;
+    color:var(--tenue); margin-bottom:9px;
+  }
+  .fila{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:6px 0; font-size:13px; }
+  .fila + .fila{ border-top:1px solid var(--borde); }
+  .fila .sub{ font-size:11px; color:var(--tenue); }
+  .chips{ display:flex; flex-wrap:wrap; gap:6px; }
+  .chip{
+    border:1px solid var(--borde); background:var(--panel);
+    color:var(--texto); border-radius:14px; padding:5px 11px;
+    font-size:12px; cursor:pointer; transition:.12s;
+  }
+  .chip:hover{ background:var(--panel-2); }
+  .chip.sel{ background:var(--acento); border-color:var(--acento); color:#fff; }
+  .chip .pt{ display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; vertical-align:-1px; }
+  #ajustes select, #ajustes input[type="text"]{
+    background:var(--panel); border:1px solid var(--borde); color:var(--texto);
+    border-radius:9px; padding:6px 9px; font:13px inherit; max-width:190px;
+  }
+  #ajustes input[type="range"]{ width:150px; accent-color:var(--acento); }
+  #ajustes textarea.ctx{
+    width:100%; margin-top:6px; min-height:56px; resize:vertical;
+    background:var(--panel); border:1px solid var(--borde); color:var(--texto);
+    border-radius:9px; padding:8px 10px; font:12px/1.4 inherit;
+  }
+  .btn-grab{
+    border:1px solid var(--borde); background:var(--panel); color:var(--texto);
+    border-radius:9px; padding:6px 12px; font:12px inherit; cursor:pointer;
+  }
+  .btn-grab.grabando{ background:var(--peligro); border-color:var(--peligro); color:#fff; }
+  .nota{ font-size:10.5px; color:var(--tenue); margin-top:6px; font-style:italic; }
+
+  :root[data-tema="retro"] #ajustes{ background:var(--bg); }
+  :root[data-tema="retro"] .grupo > h3{ color:var(--r-bright); letter-spacing:2px; }
+  :root[data-tema="retro"] .grupo > h3::before{ content:"\25C8 "; color:var(--r-dim); }
+  :root[data-tema="retro"] .fila{ text-transform:uppercase; letter-spacing:1px; font-size:11px; }
+  :root[data-tema="retro"] .fila + .fila{ border-top:1px solid var(--r-line); }
+  :root[data-tema="retro"] .fila .sub{ color:var(--r-dim); }
+  :root[data-tema="retro"] .chip,
+  :root[data-tema="retro"] #ajustes select,
+  :root[data-tema="retro"] #ajustes input[type="text"],
+  :root[data-tema="retro"] .btn-grab,
+  :root[data-tema="retro"] #ajustes textarea.ctx{
+    background:transparent; border:1px solid var(--r-dim); color:var(--r-fg);
+    border-radius:0; font-family:inherit; text-transform:uppercase; letter-spacing:.5px;
+  }
+  :root[data-tema="retro"] .chip.sel{ background:var(--r-fg); border-color:var(--r-fg); color:var(--bg); }
+  :root[data-tema="retro"] #ajustes input[type="range"]{ accent-color:var(--r-fg); }
+  :root[data-tema="retro"] .btn-grab.grabando{ background:var(--r-fg); color:var(--bg); }
+  :root[data-tema="retro"] .nota{ color:var(--r-dim); }
+  :root[data-tema="retro"] #ajustes .cuerpo::-webkit-scrollbar-thumb,
+  :root[data-tema="retro"] #ajustes textarea::-webkit-scrollbar-thumb{
+    background:var(--r-dim); border-radius:0; border:2px solid var(--bg); background-clip:content-box;
+  }
+
   /* ============================================================
      TEMA RETRO — terminal CRT ámbar (clásico / retro-futuro).
      Todo va colgado de :root[data-tema="retro"]; el tema moderno
@@ -325,6 +399,10 @@
   :root[data-tema="retro"] .sw>span{ display:none; }
   :root[data-tema="retro"] .sw::after{ content:"[ OFF ]"; color:var(--r-dim); }
   :root[data-tema="retro"] .sw:has(input:checked)::after{ content:"[ ON  ]"; color:var(--r-fg); }
+
+  /* ---------- tamaño de fuente del chat (al final: gana sobre los temas) ---------- */
+  :root[data-fs="chico"]  .bubble, :root[data-fs="chico"]  #texto{ font-size:12px !important; }
+  :root[data-fs="grande"] .bubble, :root[data-fs="grande"] #texto{ font-size:16px !important; }
 </style>
 <script>
   // El tema inicial viene horneado en <html data-tema="..."> por chat_web.py.
@@ -335,13 +413,106 @@
       var t; try { t = localStorage.getItem('vrn_tema'); } catch (e) {}
       el.dataset.tema = t === 'retro' ? 'retro' : 'moderno';
     }
+    // pintado instantáneo de la personalización (después lo re-confirma
+    // get_ajustes() de Python con lo que hay en config.json)
+    try {
+      var fs = localStorage.getItem('vrn_fs');
+      if (fs === 'chico' || fs === 'grande') el.dataset.fs = fs;
+      var props = JSON.parse(localStorage.getItem('vrn_paleta_props') || 'null');
+      if (props) for (var k in props) el.style.setProperty(k, props[k]);
+    } catch (e) {}
   })();
 </script>
 </head>
 <body>
 <div class="app">
   <div id="crt"></div>
+
+  <div id="ajustes" hidden>
+    <header>
+      <div class="marca"><span class="rayo">⚙</span><span>Personalizar</span></div>
+      <button class="cerrar" id="cfgCerrar" title="Cerrar" style="position:static;width:24px;height:24px;border:0;border-radius:8px;background:rgba(255,255,255,.06);color:var(--tenue);cursor:pointer;font-size:13px;">×</button>
+    </header>
+    <div class="cuerpo">
+
+      <div class="grupo">
+        <h3>Estética</h3>
+        <div class="fila"><span>Tema</span>
+          <div class="chips" id="chipsTema">
+            <button class="chip" data-tema="moderno">Moderno</button>
+            <button class="chip" data-tema="retro">Retro</button>
+          </div>
+        </div>
+        <div class="fila"><span>Colores</span><div class="chips" id="chipsPaleta"></div></div>
+        <div class="fila"><span>Tamaño de texto</span>
+          <div class="chips" id="chipsFuente">
+            <button class="chip" data-fs="chico">Chico</button>
+            <button class="chip" data-fs="normal">Normal</button>
+            <button class="chip" data-fs="grande">Grande</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="grupo">
+        <h3>Skills</h3>
+        <div id="listaSkills"></div>
+      </div>
+
+      <div class="grupo">
+        <h3>Atajos</h3>
+        <div class="fila">
+          <span>Hablar (push-to-talk)<br><span class="sub" id="pttActual"></span></span>
+          <button class="btn-grab" id="grabPtt">Grabar</button>
+        </div>
+        <div class="fila">
+          <span>Abrir por palmada<br><span class="sub" id="palmadaActual"></span></span>
+          <button class="btn-grab" id="grabPalmada">Grabar</button>
+        </div>
+        <div class="nota">Los atajos se aplican al reiniciar Viernes.</div>
+      </div>
+
+      <div class="grupo">
+        <h3>Voz y ventana</h3>
+        <div class="fila"><span>Responder por voz por defecto</span>
+          <span class="sw"><input type="checkbox" id="cfgVoz"><span></span></span>
+        </div>
+        <div class="fila"><span>Saludar al iniciar</span>
+          <span class="sw"><input type="checkbox" id="cfgSaludo"><span></span></span>
+        </div>
+        <div class="fila"><span>Motor de voz</span>
+          <select id="cfgMotor">
+            <option value="auto">Automático</option>
+            <option value="piper">Piper (local)</option>
+            <option value="edge">Edge (online)</option>
+          </select>
+        </div>
+        <div class="fila"><span>Velocidad de la voz<br><span class="sub">menor = más rápida</span></span>
+          <input type="range" id="cfgVelocidad" min="0.6" max="1.2" step="0.01">
+        </div>
+        <div class="fila"><span>Opacidad de la ventana</span>
+          <input type="range" id="cfgOpacidad" min="140" max="255" step="1">
+        </div>
+        <div class="nota">El motor y la velocidad de voz se aplican al reiniciar Viernes.</div>
+        <div class="fila" style="display:block;">
+          <span>País / contexto para búsquedas</span>
+          <input type="text" id="cfgPais" placeholder="colombia" style="max-width:none;width:100%;margin-top:6px;">
+          <textarea class="ctx" id="cfgContexto" placeholder="El usuario está en…"></textarea>
+        </div>
+      </div>
+
+      <div class="grupo">
+        <button class="btn-grab" id="cfgReset" style="width:100%;padding:9px;">Volver a los valores por defecto</button>
+        <div class="nota">No toca tu país/contexto de búsqueda. Los atajos y la voz se aplican al reiniciar.</div>
+      </div>
+
+    </div>
+  </div>
+
   <div class="ctrl">
+    <button id="cfg" title="Personalizar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.2.63.77 1.06 1.51 1.09H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      <svg class="pxi" viewBox="0 0 12 12" fill="currentColor" shape-rendering="crispEdges"><rect x="5" y="1" width="2" height="2"/><rect x="5" y="9" width="2" height="2"/><rect x="1" y="5" width="2" height="2"/><rect x="9" y="5" width="2" height="2"/><rect x="2" y="2" width="2" height="2"/><rect x="8" y="2" width="2" height="2"/><rect x="2" y="8" width="2" height="2"/><rect x="8" y="8" width="2" height="2"/><rect x="4" y="4" width="4" height="4"/></svg>
+    </button>
     <button id="tema" title="Cambiar a modo retro">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8M12 18v3M6 8h.01M9 8h6"/></svg>
       <svg class="pxi" viewBox="0 0 12 12" fill="currentColor" shape-rendering="crispEdges"><rect x="1" y="2" width="10" height="1"/><rect x="1" y="8" width="10" height="1"/><rect x="1" y="3" width="1" height="5"/><rect x="10" y="3" width="1" height="5"/><rect x="4" y="9" width="4" height="1"/><rect x="3" y="10" width="6" height="1"/></svg>
@@ -511,7 +682,10 @@
   }
   $texto.addEventListener('input', autoGrow);
 
-  $voz.addEventListener('change', () => apiCall('set_voz', $voz.checked));
+  $voz.addEventListener('change', () => {
+    apiCall('set_voz', $voz.checked);
+    apiCall('set_ajuste', 'personalizacion.voz_por_defecto', $voz.checked);
+  });
 
   // ---- fijar encima de todo (pin) ----
   let fijado = false;
@@ -534,13 +708,246 @@
     window.vrnEstado(ultimoEstado[0], ultimoEstado[1]);  // re-render del cartel de estado
   }
   $tema.addEventListener('click', () => {
-    aplicarTema(esRetro() ? 'moderno' : 'retro');
+    const t = esRetro() ? 'moderno' : 'retro';
+    aplicarTema(t);
+    const pal = aplicarPaleta(t, ajustes ? ajustes.paleta : null);
+    renderPaletas(t, pal);
+    marcarChips(document.getElementById('chipsTema'), 'tema', t);
+    apiCall('set_ajuste', 'personalizacion.paleta', pal);
+  });
+
+  // ============ panel de personalización ============
+  const $cfg = document.getElementById('cfg');
+  const $panel = document.getElementById('ajustes');
+
+  // Combinaciones de color por tema. moderno: acento + acento-2 + cian.
+  // retro: ámbar/verde/cian/blanco del fósforo (fg, bright, dim, line).
+  const PALETAS = {
+    moderno: {
+      azul:     { '--acento':'#4c8dff', '--acento-2':'#3f7be8', '--cian':'#57cfe6' },
+      esmeralda:{ '--acento':'#2fbf82', '--acento-2':'#249d6a', '--cian':'#5fe0c0' },
+      violeta:  { '--acento':'#8b7bff', '--acento-2':'#6f5de6', '--cian':'#c0a9ff' },
+      ambar:    { '--acento':'#f5a623', '--acento-2':'#e0901a', '--cian':'#ffcf7a' },
+      mono:     { '--acento':'#e9edf4', '--acento-2':'#c3c9d4', '--cian':'#aeb4bf' },
+    },
+    retro: {
+      ambar:  { '--r-fg':'#ffb552', '--r-bright':'#ffe0b0', '--r-dim':'#a06d2c', '--r-line':'rgba(255,181,82,.20)' },
+      verde:  { '--r-fg':'#4bd67a', '--r-bright':'#c8ffd8', '--r-dim':'#2e7d4a', '--r-line':'rgba(75,214,122,.20)' },
+      cian:   { '--r-fg':'#5fd0e6', '--r-bright':'#c6f4ff', '--r-dim':'#2f7d8f', '--r-line':'rgba(95,208,230,.20)' },
+      blanco: { '--r-fg':'#e6e8ec', '--r-bright':'#ffffff', '--r-dim':'#7c828c', '--r-line':'rgba(230,232,236,.20)' },
+    },
+  };
+
+  let ajustes = null;   // último snapshot de get_ajustes()
+
+  function paletaValida(tema, nombre){
+    return PALETAS[tema][nombre] ? nombre : Object.keys(PALETAS[tema])[0];
+  }
+
+  function aplicarPaleta(tema, nombre){
+    nombre = paletaValida(tema, nombre);
+    const props = PALETAS[tema][nombre];
+    // limpiar props del otro tema y setear las de este
+    Object.values(PALETAS).forEach(t => Object.values(t).forEach(
+      p => Object.keys(p).forEach(k => document.documentElement.style.removeProperty(k))));
+    for (const k in props) document.documentElement.style.setProperty(k, props[k]);
+    try {
+      localStorage.setItem('vrn_paleta_props', JSON.stringify(props));
+      localStorage.setItem('vrn_paleta', nombre);
+    } catch (e) {}
+    return nombre;
+  }
+
+  function aplicarFuente(fs){
+    if (fs === 'normal') delete document.documentElement.dataset.fs;
+    else document.documentElement.dataset.fs = fs;
+    try { localStorage.setItem('vrn_fs', fs); } catch (e) {}
+  }
+
+  function marcarChips(cont, attr, valor){
+    cont.querySelectorAll('.chip').forEach(c =>
+      c.classList.toggle('sel', c.dataset[attr] === valor));
+  }
+
+  function renderPaletas(tema, sel){
+    const cont = document.getElementById('chipsPaleta');
+    cont.innerHTML = '';
+    Object.keys(PALETAS[tema]).forEach(nombre => {
+      const b = document.createElement('button');
+      b.className = 'chip'; b.dataset.pal = nombre;
+      const c = tema === 'retro' ? PALETAS[tema][nombre]['--r-fg'] : PALETAS[tema][nombre]['--acento'];
+      b.innerHTML = '<span class="pt" style="background:' + c + '"></span>' +
+                    nombre.charAt(0).toUpperCase() + nombre.slice(1);
+      b.addEventListener('click', () => {
+        const n = aplicarPaleta(tema, nombre);
+        marcarChips(cont, 'pal', n);
+        apiCall('set_ajuste', 'personalizacion.paleta', n);
+      });
+      cont.appendChild(b);
+    });
+    marcarChips(cont, 'pal', paletaValida(tema, sel));
+  }
+
+  function renderSkills(lista){
+    const cont = document.getElementById('listaSkills');
+    cont.innerHTML = '';
+    (lista || []).forEach(sk => {
+      const row = document.createElement('div');
+      row.className = 'fila';
+      row.innerHTML = '<span>' + sk.etiqueta + '</span>';
+      const wrap = document.createElement('span');
+      wrap.className = 'sw';
+      const inp = document.createElement('input');
+      inp.type = 'checkbox'; inp.checked = sk.activa;
+      inp.addEventListener('change', () =>
+        apiCall('set_ajuste', 'personalizacion.skills.' + sk.nombre, inp.checked));
+      wrap.append(inp, document.createElement('span'));
+      row.appendChild(wrap);
+      cont.appendChild(row);
+    });
+  }
+
+  // ---- captura de atajos (formato de la librería `keyboard` de Python) ----
+  const IGNORAR = { Control:1, Shift:1, Alt:1, Meta:1 };
+  function comboDeEvento(e){
+    if (IGNORAR[e.key]) return null;
+    const partes = [];
+    if (e.ctrlKey) partes.push('ctrl');
+    if (e.altKey) partes.push('alt');
+    if (e.shiftKey) partes.push('shift');
+    if (e.metaKey) partes.push('windows');
+    let k = e.key;
+    if (k === ' ') k = 'space';
+    else if (k.startsWith('Arrow')) k = k.slice(5).toLowerCase();
+    else k = k.toLowerCase();
+    partes.push(k);
+    return partes.join('+');
+  }
+
+  function grabador(btn, labelEl, clave){
+    btn.addEventListener('click', () => {
+      if (btn.classList.contains('grabando')) return;
+      btn.classList.add('grabando');
+      btn.textContent = 'Apretá una tecla…';
+      const onKey = e => {
+        e.preventDefault();
+        const combo = comboDeEvento(e);
+        if (!combo) return;
+        window.removeEventListener('keydown', onKey, true);
+        btn.classList.remove('grabando');
+        btn.textContent = 'Grabar';
+        labelEl.textContent = combo;
+        apiCall('set_ajuste', clave, combo);
+      };
+      window.addEventListener('keydown', onKey, true);
+    });
+  }
+  grabador(document.getElementById('grabPtt'),
+           document.getElementById('pttActual'), 'push_to_talk.key');
+  grabador(document.getElementById('grabPalmada'),
+           document.getElementById('palmadaActual'), 'palmada.tecla');
+
+  // ---- chips de tema y fuente dentro del panel ----
+  document.getElementById('chipsTema').querySelectorAll('.chip').forEach(c => {
+    c.addEventListener('click', () => {
+      const t = c.dataset.tema;
+      aplicarTema(t);
+      marcarChips(document.getElementById('chipsTema'), 'tema', t);
+      const pal = aplicarPaleta(t, ajustes ? ajustes.paleta : null);
+      renderPaletas(t, pal);
+      apiCall('set_ajuste', 'personalizacion.paleta', pal);
+    });
+  });
+  document.getElementById('chipsFuente').querySelectorAll('.chip').forEach(c => {
+    c.addEventListener('click', () => {
+      aplicarFuente(c.dataset.fs);
+      marcarChips(document.getElementById('chipsFuente'), 'fs', c.dataset.fs);
+      apiCall('set_ajuste', 'personalizacion.tam_fuente', c.dataset.fs);
+    });
+  });
+
+  // ---- voz y ventana ----
+  const $cfgVoz = document.getElementById('cfgVoz');
+  const $cfgSaludo = document.getElementById('cfgSaludo');
+  const $cfgMotor = document.getElementById('cfgMotor');
+  const $cfgVelocidad = document.getElementById('cfgVelocidad');
+  const $cfgOpacidad = document.getElementById('cfgOpacidad');
+  const $cfgPais = document.getElementById('cfgPais');
+  const $cfgContexto = document.getElementById('cfgContexto');
+
+  $cfgVoz.addEventListener('change', () => {
+    $voz.checked = $cfgVoz.checked;
+    apiCall('set_voz', $cfgVoz.checked);
+    apiCall('set_ajuste', 'personalizacion.voz_por_defecto', $cfgVoz.checked);
+  });
+  $cfgSaludo.addEventListener('change', () =>
+    apiCall('set_ajuste', 'saludo.al_iniciar', $cfgSaludo.checked));
+  $cfgMotor.addEventListener('change', () =>
+    apiCall('set_ajuste', 'tts.motor', $cfgMotor.value));
+  $cfgVelocidad.addEventListener('change', () =>
+    apiCall('set_ajuste', 'tts.piper_length_scale', parseFloat($cfgVelocidad.value)));
+  $cfgOpacidad.addEventListener('change', () =>
+    apiCall('set_ajuste', 'personalizacion.opacidad_ventana', parseInt($cfgOpacidad.value, 10)));
+  $cfgPais.addEventListener('change', () =>
+    apiCall('set_ajuste', 'internet.pais', $cfgPais.value.trim()));
+  $cfgContexto.addEventListener('change', () =>
+    apiCall('set_ajuste', 'internet.contexto_usuario', $cfgContexto.value.trim()));
+
+  function volcarAjustes(a){
+    ajustes = a;
+    const tema = a.tema === 'retro' ? 'retro' : 'moderno';
+    marcarChips(document.getElementById('chipsTema'), 'tema', tema);
+    marcarChips(document.getElementById('chipsFuente'), 'fs', a.tam_fuente || 'normal');
+    aplicarFuente(a.tam_fuente || 'normal');
+    aplicarPaleta(tema, a.paleta);
+    renderPaletas(tema, a.paleta);
+    renderSkills(a.skills);
+    document.getElementById('pttActual').textContent = a.ptt || '—';
+    document.getElementById('palmadaActual').textContent = a.palmada || '—';
+    $cfgVoz.checked = !!a.voz_por_defecto;
+    $voz.checked = !!a.voz_por_defecto;
+    $cfgSaludo.checked = !!a.saludo_al_iniciar;
+    $cfgMotor.value = a.tts_motor || 'auto';
+    $cfgVelocidad.value = a.tts_velocidad || 0.8;
+    $cfgOpacidad.value = a.opacidad || 232;
+    $cfgPais.value = a.internet_pais || '';
+    $cfgContexto.value = a.internet_contexto || '';
+  }
+
+  function abrirPanel(){
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.get_ajustes){
+      window.pywebview.api.get_ajustes().then(a => { volcarAjustes(a); $panel.hidden = false; });
+    } else {
+      $panel.hidden = false;
+    }
+  }
+  $cfg.addEventListener('click', abrirPanel);
+  document.getElementById('cfgCerrar').addEventListener('click', () => { $panel.hidden = true; });
+
+  document.getElementById('cfgReset').addEventListener('click', () => {
+    if (!confirm('¿Volver a los valores por defecto de estética, skills, atajos y voz?')) return;
+    try {
+      localStorage.removeItem('vrn_tema');
+      localStorage.removeItem('vrn_fs');
+      localStorage.removeItem('vrn_paleta');
+      localStorage.removeItem('vrn_paleta_props');
+    } catch (e) {}
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.restablecer_ajustes){
+      window.pywebview.api.restablecer_ajustes().then(a => {
+        aplicarTema(a.tema === 'retro' ? 'retro' : 'moderno');
+        volcarAjustes(a);
+      });
+    }
   });
 
   window.addEventListener('pywebviewready', () => {
     apiCall('ready');
     $tema.title = esRetro() ? 'Volver al modo moderno' : 'Cambiar a modo retro';
     if (fijado) aplicarPin();   // restaurar el estado fijado de la sesión anterior
+    // sincronizar la estética con lo que hay en config.json
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.get_ajustes){
+      window.pywebview.api.get_ajustes().then(volcarAjustes);
+    }
   });
 </script>
 </body>

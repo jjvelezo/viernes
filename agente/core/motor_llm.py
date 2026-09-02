@@ -7,6 +7,7 @@ devuelve el texto a decir en voz alta. Si el modelo ejecuta una tool y no
 agrega comentario propio (pasa seguido con acciones simples como abrir una
 app), cae al texto que devolvio la tool misma en vez de quedarse mudo."""
 
+import re
 import threading
 
 from litert_lm import Backend, Engine, interfaces
@@ -79,12 +80,65 @@ def cargar():
     return _engine
 
 
-def ejecutar_turno(texto, tools):
+# Corta el texto que va llegando del modelo en oraciones completas (termina
+# en . ! ? … o salto de linea). El modo streaming va diciendo cada una apenas
+# esta lista, en vez de esperar la respuesta entera.
+_FIN_ORACION = re.compile(r".+?(?:[.!?…]+(?=\s|$)|\n)", re.S)
+
+
+def _partir_oraciones(buffer):
+    """(oraciones_completas, resto_sin_terminar)."""
+    oraciones, pos = [], 0
+    for m in _FIN_ORACION.finditer(buffer):
+        fragmento = m.group(0).strip()
+        if fragmento:
+            oraciones.append(fragmento)
+        pos = m.end()
+    return oraciones, buffer[pos:]
+
+
+def _consumir_stream(conversacion, texto, al_oracion):
+    """Consume la respuesta del modelo a medida que se genera y llama a
+    `al_oracion(oracion)` por cada oracion completa. Si `al_oracion` devuelve
+    False, cancela la generacion. Devuelve el texto completo."""
+    completo, buffer = "", ""
+    for msg in conversacion.send_message_async(texto):
+        nuevo = ""
+        for bloque in msg.get("content", []) or []:
+            if isinstance(bloque, dict) and bloque.get("type") == "text":
+                nuevo += bloque.get("text", "")
+        if not nuevo:
+            continue
+        # Algunos backends mandan el texto acumulado en vez del delta.
+        if completo and nuevo.startswith(completo):
+            nuevo = nuevo[len(completo):]
+        completo += nuevo
+        buffer += nuevo
+        oraciones, buffer = _partir_oraciones(buffer)
+        for oracion in oraciones:
+            if al_oracion(oracion) is False:
+                try:
+                    conversacion.cancel_process()
+                except Exception:
+                    pass
+                return completo.strip()
+    resto = buffer.strip()
+    if resto:
+        al_oracion(resto)
+    return completo.strip()
+
+
+def ejecutar_turno(texto, tools, al_oracion=None):
     """Manda `texto` al modelo con las `tools` (funciones Python, con type
     hints y docstring Args: para que litert-lm-api arme bien el schema).
     Devuelve (texto_respuesta, llamadas) -- llamadas es una lista de
     {"tool", "args", "resultado"} por cada tool que se ejecuto (vacia si
-    el modelo respondio directo), para poder loguear el detalle."""
+    el modelo respondio directo), para poder loguear el detalle.
+
+    Si se pasa `al_oracion`, la respuesta se genera en streaming y se llama
+    a `al_oracion(oracion)` por cada oracion completa (para ir diciendola en
+    voz alta sin esperar el final). Devolver False desde ahi corta la
+    generacion."""
     global _engine
 
     registrador = _RegistradorTools()
@@ -97,7 +151,12 @@ def ejecutar_turno(texto, tools):
             automatic_tool_calling=True,
             tool_event_handler=registrador,
         )
-        respuesta = conversacion.send_message(texto)
+        if al_oracion is None:
+            respuesta = conversacion.send_message(texto)
+        else:
+            respuesta = {
+                "content": [{"type": "text", "text": _consumir_stream(conversacion, texto, al_oracion)}]
+            }
 
     texto_respuesta = ""
     for bloque in respuesta.get("content", []):
@@ -107,5 +166,7 @@ def ejecutar_turno(texto, tools):
 
     if not texto_respuesta and registrador.ultimo_resultado:
         texto_respuesta = str(registrador.ultimo_resultado)
+        if al_oracion is not None:  # una tool sin comentario del modelo: decir su resultado
+            al_oracion(texto_respuesta)
 
     return texto_respuesta, registrador.llamadas

@@ -20,8 +20,6 @@ import re
 import time
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
-
 PERFIL_NAVEGADOR = Path(__file__).resolve().parent.parent.parent / "privado" / "perfil_chatgpt"
 PLACEHOLDER_CAJA_TEXTO = "Pregúntale a ChatGPT"
 SELECTOR_TRANSCRIPCION = "[data-conversation-transcript]:visible"
@@ -57,6 +55,10 @@ def _obtener_contexto():
     salir del proceso (ver _cerrar/atexit mas abajo)."""
     global _playwright, _contexto
     if _contexto is None:
+        # Import perezoso: Playwright (y su arranque de Chromium) solo se
+        # cargan si de verdad se usa ChatGPT, no en cada arranque del agente.
+        from playwright.sync_api import sync_playwright
+
         PERFIL_NAVEGADOR.mkdir(parents=True, exist_ok=True)
         _playwright = sync_playwright().start()
         _contexto = _playwright.chromium.launch_persistent_context(
